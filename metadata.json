@@ -1,0 +1,6 @@
+{
+  "name": "介護活動・予定表連動システム",
+  "description": "デイサービスとヘルパーステーションの利用者予定表から毎日のヘルパー活動表（シフト・指示）を自動作成し、業務効率化・給付管理単位シミュレーション等を行うシステム",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
