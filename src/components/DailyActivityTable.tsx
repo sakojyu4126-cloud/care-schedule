@@ -206,39 +206,12 @@ export default function DailyActivityTable({
     const dragData = e.dataTransfer.getData("text/plain");
     if (dragData && dragData.startsWith("activity:")) {
       const activityId = dragData.substring("activity:".length);
-      
-      const colEl = (e.currentTarget.closest('[data-route]') || e.currentTarget) as HTMLElement;
-      if (!colEl) return;
-      const rect = colEl.getBoundingClientRect();
-      const y = e.clientY - rect.top;
-
-      const minutesFromStart = Math.round(y / 7.5) * 5;
-      const startMin = 420 + minutesFromStart;
-
-      const minStart = 7 * 60; // 07:00
-      const maxStart = 20 * 60; // 20:00
 
       if (activityId.startsWith("rep-card-")) {
         const repId = activityId.replace("rep-card-", "");
         if (reports && onUpdateReports) {
           const targetRep = reports.find(r => r.id === repId);
           if (targetRep) {
-            const currentStart = targetRep.displayStartTime || parseTimeRangeString(targetRep.actualTime)?.start || parseTimeRangeString(targetRep.scheduledTime)?.start || "08:00";
-            const currentEnd = targetRep.displayEndTime || parseTimeRangeString(targetRep.actualTime)?.end || parseTimeRangeString(targetRep.scheduledTime)?.end || "08:30";
-            const startMins = parseTimeToMinutes(currentStart);
-            const endMins = parseTimeToMinutes(currentEnd);
-            let duration = (endMins > startMins) ? (endMins - startMins) : (targetRep.durationMinutes || 30);
-
-            const finalStartMin = Math.max(minStart, Math.min(maxStart - duration, startMin));
-            const startHour = Math.floor(finalStartMin / 60);
-            const startMinute = finalStartMin % 60;
-            const newStartTime = `${startHour.toString().padStart(2, "0")}:${startMinute.toString().padStart(2, "0")}`;
-
-            const endMin = finalStartMin + duration;
-            const endHour = Math.floor(endMin / 60);
-            const endMinute = endMin % 60;
-            const newEndTime = `${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`;
-
             const dateStr = selectedDate || getTodayDateString();
             const activeRoutes = (settings.dateHelperRoutes?.[dateStr] || settings.helperRoutes);
             const matchedRoute = activeRoutes.find(r => r.key === routeKey);
@@ -247,9 +220,6 @@ export default function DailyActivityTable({
               if (rep.id === repId) {
                 return {
                   ...rep,
-                  displayStartTime: newStartTime,
-                  displayEndTime: newEndTime,
-                  durationMinutes: duration,
                   route: routeKey,
                   helperName: matchedRoute?.name || rep.helperName
                 };
@@ -267,28 +237,9 @@ export default function DailyActivityTable({
           const isBreak = a.wing === "休憩";
           const finalRoute = isBreak ? a.route : routeKey;
 
-          const effStart = a.displayStartTime || a.startTime;
-          const effEnd = a.displayEndTime || a.endTime;
-          const duration = getDurationInMinutes(effStart, effEnd) || 30;
-          
-          const finalStartMin = Math.max(minStart, Math.min(maxStart - duration, startMin));
-          const startHour = Math.floor(finalStartMin / 60);
-          const startMinute = finalStartMin % 60;
-          const newStartTime = `${startHour.toString().padStart(2, "0")}:${startMinute.toString().padStart(2, "0")}`;
-
-          const endMin = finalStartMin + duration;
-          const endHour = Math.floor(endMin / 60);
-          const endMinute = endMin % 60;
-          const newEndTime = `${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`;
-
           return { 
             ...a, 
             route: finalRoute,
-            startTime: newStartTime,
-            endTime: newEndTime,
-            displayStartTime: newStartTime,
-            displayEndTime: newEndTime,
-            displayTimeText: `${newStartTime}〜${newEndTime}`,
             isDailyOverride: true
           };
         }

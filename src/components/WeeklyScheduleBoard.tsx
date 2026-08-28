@@ -318,29 +318,11 @@ export default function WeeklyScheduleBoard({
       );
       
       if (service) {
-        // We must get the container column element to calculate the absolute Y correctly
-        const colEl = e.currentTarget.closest('[data-route]') || e.currentTarget;
-        const rect = colEl.getBoundingClientRect();
-        const y = e.clientY - rect.top;
-
-        // Get 30-minute snapped start time
-        const newStartTime = calculateTimeFromY(y);
-        
-        const duration = getDurationInMinutes(service.startTime, service.endTime);
-        const startMin = parseTimeToMinutes(newStartTime);
-        const endMin = startMin + duration;
-        const endHour = Math.floor(endMin / 60);
-        const endMinute = endMin % 60;
-        const newEndTime = `${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`;
-
         const updatedWeeklyServices = client.weeklyServices.map(s => {
           if (s.id === service.id) {
             return { 
               ...s, 
-              route: routeKey,
-              displayStartTime: newStartTime,
-              displayEndTime: newEndTime
-              // We absolutely DO NOT touch or automatically change the official service times (startTime, endTime)
+              route: routeKey
             };
           }
           return s;
