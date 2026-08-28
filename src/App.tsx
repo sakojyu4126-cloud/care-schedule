@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { Client, DailyActivity, AppSettings, CareLevel, ExtraordinaryReport, FreeSticker } from "./types";
 import { INITIAL_CLIENTS, INITIAL_SETTINGS, INITIAL_EXTRAORDINARY_REPORTS } from "./utils/dummyData";
-import { extractDailyActivities, getTodayDateString, syncActivitiesWithClients } from "./utils/scheduler";
+import { extractDailyActivities, getTodayDateString, syncActivitiesWithClients, updateClientInfoInActivities } from "./utils/scheduler";
 import DailyActivityTable from "./components/DailyActivityTable";
 import MobileHelperView from "./components/MobileHelperView";
 import ClientMasterTab from "./components/ClientMasterTab";
@@ -445,35 +445,22 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [clients, activities, settings, reports, freeStickers, clientId]);
 
+  // Keep client display names & room numbers in sync when clients master updates without moving cards or resurrecting deleted cards
+  useEffect(() => {
+    setActivities(prevActivities => updateClientInfoInActivities(prevActivities, clients));
+  }, [clients]);
+
+  // If viewing a date that has no activities recorded yet, initialize once from weekly schedule
   useEffect(() => {
     setActivities(prevActivities => {
-      const synced = syncActivitiesWithClients(prevActivities, clients, settings, [selectedDate]);
-      if (
-        synced.length === prevActivities.length &&
-        synced.every((s, i) => {
-          const p = prevActivities[i];
-          return (
-            p &&
-            s.id === p.id &&
-            s.date === p.date &&
-            s.startTime === p.startTime &&
-            s.endTime === p.endTime &&
-            s.route === p.route &&
-            s.serviceCode === p.serviceCode &&
-            s.content === p.content &&
-            s.clientName === p.clientName &&
-            s.roomNumber === p.roomNumber &&
-            s.medicine === p.medicine &&
-            s.isChecked === p.isChecked &&
-            s.helperInstruction === p.helperInstruction
-          );
-        })
-      ) {
-        return prevActivities;
+      const hasActivitiesForDate = prevActivities.some(a => a.date === selectedDate);
+      if (!hasActivitiesForDate) {
+        const extracted = extractDailyActivities(selectedDate, clients, settings);
+        return [...prevActivities, ...extracted];
       }
-      return synced;
+      return prevActivities;
     });
-  }, [clients, settings, selectedDate]);
+  }, [selectedDate]);
 
   const handleExtractFromWeekly = () => {
     const extracted = extractDailyActivities(selectedDate, clients, settings);

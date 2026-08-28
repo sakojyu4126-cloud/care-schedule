@@ -597,119 +597,47 @@ export function extractDailyActivities(
   });
 }
 
+export function updateClientInfoInActivities(
+  activities: DailyActivity[],
+  clients: Client[]
+): DailyActivity[] {
+  const clientMap = new Map<string, Client>(clients.map(c => [c.id, c]));
+  let hasChanged = false;
+  const updated = activities.map(act => {
+    if (!act.clientId) return act;
+    const cl = clientMap.get(act.clientId);
+    if (!cl) return act;
+    const newName = cl.nickname?.trim() || cl.kanjiName.trim();
+    const newRoom = cl.roomNumber;
+    const newWing = newRoom ? getWingFromRoom(newRoom) : act.wing;
+    if (act.clientName !== newName || act.roomNumber !== newRoom || (newWing !== "その他" && act.wing !== newWing)) {
+      hasChanged = true;
+      return {
+        ...act,
+        clientName: newName,
+        roomNumber: newRoom,
+        wing: newWing !== "その他" ? newWing : act.wing
+      };
+    }
+    return act;
+  });
+  return hasChanged ? updated : activities;
+}
+
 /**
- * Synchronizes daily activities with the master client database and settings.
- * Ensures that changes made in the Client Master (additions, edits, deletions of weekly services/clients)
- * immediately propagate to Daily Activities across all dates without losing daily manual entries,
- * medication stamps, completion checks, or staff instructions.
+ * Synchronizes daily activities with the master client database.
+ * Preserves all routes, manual overrides, deleted cards, times, and stamps.
  */
 export function syncActivitiesWithClients(
   prevActivities: DailyActivity[],
   clients: Client[],
-  settings: AppSettings,
-  ensureDates: string[] = []
+  _settings?: AppSettings,
+  _ensureDates?: string[]
 ): DailyActivity[] {
-  const uniqueDates = Array.from(new Set([
-    ...prevActivities.map(act => act.date).filter(Boolean),
-    ...ensureDates.filter(Boolean)
-  ]));
-
-  if (uniqueDates.length === 0) {
-    uniqueDates.push(getTodayDateString());
+  if (!prevActivities || prevActivities.length === 0) {
+    return [];
   }
-
-  const clientMap = new Map<string, Client>(clients.map(c => [c.id, c]));
-  const resultActivities: DailyActivity[] = [];
-
-  for (const dateStr of uniqueDates) {
-    const freshMaster = extractDailyActivities(dateStr, clients, settings);
-    const existingForDate = prevActivities.filter(act => act.date === dateStr);
-
-    // 1. Manual activities that were explicitly added by user on this day (e.g. id "manual-...")
-    const manualActivities = existingForDate.filter(act => 
-      act.id.startsWith("manual-") || (act.clientId === null && act.wing !== "休憩")
-    );
-
-    // 2. Break activities (update times/routes from settings while preserving checks)
-    const freshBreaks = freshMaster.filter(act => act.wing === "休憩");
-    const syncedBreaks: DailyActivity[] = freshBreaks.map(fb => {
-      const existingBreak = existingForDate.find(a => 
-        a.id === fb.id || (a.wing === "休憩" && a.route === fb.route)
-      );
-      if (existingBreak) {
-        return {
-          ...fb,
-          isChecked: !!existingBreak.isChecked
-        };
-      }
-      return fb;
-    });
-
-    // 3. Client weekly service activities
-    const freshClientActs = freshMaster.filter(act => act.clientId !== null);
-    const syncedClientActs: DailyActivity[] = freshClientActs.map(fresh => {
-      // Find matching existing activity
-      const exactMatch = existingForDate.find(a => a.id === fresh.id);
-      const existingMatch = exactMatch || existingForDate.find(a => 
-        a.clientId === fresh.clientId && 
-        !a.id.startsWith("manual-") &&
-        (a.id.startsWith(`${fresh.clientId}-`))
-      );
-
-      if (existingMatch) {
-        const cl = clientMap.get(fresh.clientId || "");
-        const expectedName = cl ? (cl.nickname?.trim() || cl.kanjiName.trim()) : existingMatch.clientName;
-        const expectedRoom = cl ? cl.roomNumber : existingMatch.roomNumber;
-
-        if (existingMatch.isDailyOverride) {
-          return {
-            ...existingMatch,
-            clientName: expectedName || existingMatch.clientName,
-            roomNumber: expectedRoom || existingMatch.roomNumber,
-            wing: expectedRoom ? getWingFromRoom(expectedRoom) : existingMatch.wing
-          };
-        }
-
-        return {
-          ...fresh,
-          route: existingMatch.route || fresh.route,
-          displayStartTime: existingMatch.displayStartTime,
-          displayEndTime: existingMatch.displayEndTime,
-          clientName: expectedName || fresh.clientName,
-          roomNumber: expectedRoom || fresh.roomNumber,
-          wing: expectedRoom ? getWingFromRoom(expectedRoom) : fresh.wing,
-          medicine: existingMatch.medicine || "none",
-          stickers: existingMatch.stickers || [],
-          isChecked: !!existingMatch.isChecked,
-          helperInstruction: existingMatch.helperInstruction || fresh.helperInstruction,
-          displayTimeText: existingMatch.displayTimeText || fresh.displayTimeText
-        };
-      }
-
-      return fresh;
-    });
-
-    // 4. Also preserve any daily overridden activities if the client still exists in client master
-    const overrideActs = existingForDate.filter(act => 
-      act.isDailyOverride && 
-      act.clientId && 
-      clientMap.has(act.clientId) && 
-      !syncedClientActs.some(s => s.id === act.id)
-    );
-
-    // Combine all and sort by start time
-    const dayResult = [...manualActivities, ...syncedBreaks, ...syncedClientActs, ...overrideActs];
-    dayResult.sort((a, b) => {
-      const sA = parseTimeToMinutes(a.startTime);
-      const sB = parseTimeToMinutes(b.startTime);
-      if (sA !== sB) return sA - sB;
-      return parseTimeToMinutes(a.endTime) - parseTimeToMinutes(b.endTime);
-    });
-
-    resultActivities.push(...dayResult);
-  }
-
-  return resultActivities;
+  return updateClientInfoInActivities(prevActivities, clients);
 }
 
 // Maximum claims limits for each CareLevel (単位/月)

@@ -267,7 +267,9 @@ export default function DailyActivityTable({
           const isBreak = a.wing === "休憩";
           const finalRoute = isBreak ? a.route : routeKey;
 
-          const duration = getDurationInMinutes(a.startTime, a.endTime);
+          const effStart = a.displayStartTime || a.startTime;
+          const effEnd = a.displayEndTime || a.endTime;
+          const duration = getDurationInMinutes(effStart, effEnd) || 30;
           
           const finalStartMin = Math.max(minStart, Math.min(maxStart - duration, startMin));
           const startHour = Math.floor(finalStartMin / 60);
@@ -282,8 +284,11 @@ export default function DailyActivityTable({
           return { 
             ...a, 
             route: finalRoute,
+            startTime: newStartTime,
+            endTime: newEndTime,
             displayStartTime: newStartTime,
             displayEndTime: newEndTime,
+            displayTimeText: `${newStartTime}〜${newEndTime}`,
             isDailyOverride: true
           };
         }
@@ -496,8 +501,10 @@ export default function DailyActivityTable({
     setFormRoomNumber(activity.roomNumber);
     setFormWing(activity.wing);
     setFormCategory("新規");
-    setFormStartTime(activity.startTime);
-    setFormEndTime(activity.endTime);
+    const effStart = activity.displayStartTime || activity.startTime;
+    const effEnd = activity.displayEndTime || activity.endTime;
+    setFormStartTime(effStart);
+    setFormEndTime(effEnd);
     setFormRoute(activity.route);
     setFormServiceCode(activity.serviceCode);
     setFormContent(activity.content);
@@ -567,7 +574,6 @@ export default function DailyActivityTable({
     } else {
       const updated = activities.map(act => {
         if (act.id === selectedActivity.id) {
-          const timeChanged = act.startTime !== formStartTime || act.endTime !== formEndTime;
           return {
             ...act,
             clientName: formClientName,
@@ -575,14 +581,15 @@ export default function DailyActivityTable({
             wing: finalWing,
             startTime: formStartTime,
             endTime: formEndTime,
+            displayStartTime: formStartTime,
+            displayEndTime: formEndTime,
+            displayTimeText: `${formStartTime}〜${formEndTime}`,
             route: formRoute,
             serviceCode: formServiceCode,
             content: formContent,
             medicine: formMedicine,
             isRule8RecordTarget: formIsRule8,
             helperInstruction: formHelperInstruction,
-            displayStartTime: timeChanged ? undefined : act.displayStartTime,
-            displayEndTime: timeChanged ? undefined : act.displayEndTime,
             isDailyOverride: true
           };
         }
@@ -1226,7 +1233,9 @@ export default function DailyActivityTable({
                               </div>
                             ) : (
                               (() => {
-                                const duration = getDurationInMinutes(act.startTime, act.endTime);
+                                const effStart = act.displayStartTime || act.startTime;
+                                const effEnd = act.displayEndTime || act.endTime;
+                                const duration = getDurationInMinutes(effStart, effEnd);
                                 if (duration < 45) {
                                   return (
                                     <div className="h-full flex items-center gap-1.5 text-[11px] font-bold w-full select-none overflow-hidden pr-0.5">
@@ -1234,7 +1243,7 @@ export default function DailyActivityTable({
                                         {getSurnameOnly(act.clientName)}
                                       </div>
                                       <div className="font-mono font-black text-[11px] text-slate-850 tracking-tighter shrink-0 leading-none text-left">
-                                        {act.displayTimeText || `${formatTimeHHMM(act.startTime)}〜${formatTimeHHMM(act.endTime)}`}
+                                        {act.displayTimeText || `${formatTimeHHMM(effStart)}〜${formatTimeHHMM(effEnd)}`}
                                       </div>
                                       <div className="ml-auto shrink-0 flex items-center gap-0.5 max-w-[40%] overflow-hidden">
                                         {act.serviceCode && (
@@ -1253,7 +1262,7 @@ export default function DailyActivityTable({
                                           {getSurnameOnly(act.clientName)}
                                         </span>
                                         <span className="text-[11px] text-slate-850 font-mono font-black tracking-tighter shrink-0 text-left">
-                                          {act.displayTimeText || `${formatTimeHHMM(act.startTime)}〜${formatTimeHHMM(act.endTime)}`}
+                                          {act.displayTimeText || `${formatTimeHHMM(effStart)}〜${formatTimeHHMM(effEnd)}`}
                                         </span>
                                       </div>
 
