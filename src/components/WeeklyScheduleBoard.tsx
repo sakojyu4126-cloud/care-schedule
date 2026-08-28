@@ -318,11 +318,27 @@ export default function WeeklyScheduleBoard({
       );
       
       if (service) {
+        // Calculate the dropped Y coordinate for visual slot placement
+        const colEl = (e.currentTarget.closest('[data-route]') || e.currentTarget) as HTMLElement;
+        const rect = colEl ? colEl.getBoundingClientRect() : null;
+        const y = rect ? Math.max(0, e.clientY - rect.top) : 0;
+
+        const newDisplayStartTime = calculateTimeFromY(y);
+        const duration = getDurationInMinutes(service.displayStartTime || service.startTime, service.displayEndTime || service.endTime) || getDurationInMinutes(service.startTime, service.endTime) || 30;
+        const startMin = parseTimeToMinutes(newDisplayStartTime);
+        const endMin = startMin + duration;
+        const endHour = Math.floor(endMin / 60);
+        const endMinute = endMin % 60;
+        const newDisplayEndTime = `${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`;
+
         const updatedWeeklyServices = client.weeklyServices.map(s => {
           if (s.id === service.id) {
             return { 
               ...s, 
-              route: routeKey
+              route: routeKey,
+              displayStartTime: newDisplayStartTime,
+              displayEndTime: newDisplayEndTime
+              // Official startTime and endTime remain unchanged
             };
           }
           return s;

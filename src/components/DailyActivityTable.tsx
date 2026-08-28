@@ -207,11 +207,37 @@ export default function DailyActivityTable({
     if (dragData && dragData.startsWith("activity:")) {
       const activityId = dragData.substring("activity:".length);
 
+      const colEl = (e.currentTarget.closest('[data-route]') || e.currentTarget) as HTMLElement;
+      if (!colEl) return;
+      const rect = colEl.getBoundingClientRect();
+      const y = Math.max(0, e.clientY - rect.top);
+
+      // Snap to 5 minutes (90px per hour = 1.5px per minute; 5 minutes = 7.5px)
+      const minutesFromStart = Math.round(y / 7.5) * 5;
+      const minStart = 7 * 60; // 07:00 (420 min)
+      const maxStart = 20 * 60; // 20:00 (1200 min)
+      const startMin = Math.max(minStart, Math.min(maxStart - 15, minStart + minutesFromStart));
+
+      const startHour = Math.floor(startMin / 60);
+      const startMinute = startMin % 60;
+      const newDisplayStartTime = `${startHour.toString().padStart(2, "0")}:${startMinute.toString().padStart(2, "0")}`;
+
       if (activityId.startsWith("rep-card-")) {
         const repId = activityId.replace("rep-card-", "");
         if (reports && onUpdateReports) {
           const targetRep = reports.find(r => r.id === repId);
           if (targetRep) {
+            const currentStart = targetRep.displayStartTime || parseTimeRangeString(targetRep.actualTime)?.start || parseTimeRangeString(targetRep.scheduledTime)?.start || "08:00";
+            const currentEnd = targetRep.displayEndTime || parseTimeRangeString(targetRep.actualTime)?.end || parseTimeRangeString(targetRep.scheduledTime)?.end || "08:30";
+            const startMins = parseTimeToMinutes(currentStart);
+            const endMins = parseTimeToMinutes(currentEnd);
+            const duration = (endMins > startMins) ? (endMins - startMins) : (targetRep.durationMinutes || 30);
+
+            const endMin = Math.min(maxStart + 60, startMin + duration);
+            const endHour = Math.floor(endMin / 60);
+            const endMinute = endMin % 60;
+            const newDisplayEndTime = `${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`;
+
             const dateStr = selectedDate || getTodayDateString();
             const activeRoutes = (settings.dateHelperRoutes?.[dateStr] || settings.helperRoutes);
             const matchedRoute = activeRoutes.find(r => r.key === routeKey);
@@ -221,6 +247,8 @@ export default function DailyActivityTable({
                 return {
                   ...rep,
                   route: routeKey,
+                  displayStartTime: newDisplayStartTime,
+                  displayEndTime: newDisplayEndTime,
                   helperName: matchedRoute?.name || rep.helperName
                 };
               }
@@ -237,9 +265,25 @@ export default function DailyActivityTable({
           const isBreak = a.wing === "休憩";
           const finalRoute = isBreak ? a.route : routeKey;
 
+          const effStart = a.displayStartTime || a.startTime;
+          const effEnd = a.displayEndTime || a.endTime;
+          const duration = getDurationInMinutes(effStart, effEnd) || getDurationInMinutes(a.startTime, a.endTime) || 30;
+
+          const endMin = Math.min(maxStart + 60, startMin + duration);
+          const endHour = Math.floor(endMin / 60);
+          const endMinute = endMin % 60;
+          const newDisplayEndTime = `${endHour.toString().padStart(2, "0")}:${endMinute.toString().padStart(2, "0")}`;
+
+          // Keep official registered service time untouched on the card face
+          const officialTimeLabel = a.displayTimeText || `${formatTimeHHMM(a.startTime)}〜${formatTimeHHMM(a.endTime)}`;
+
           return { 
             ...a, 
             route: finalRoute,
+            displayStartTime: newDisplayStartTime,
+            displayEndTime: newDisplayEndTime,
+            displayTimeText: officialTimeLabel,
+            // startTime and endTime ARE NEVER CHANGED
             isDailyOverride: true
           };
         }
@@ -1187,6 +1231,7 @@ export default function DailyActivityTable({
                                 const effStart = act.displayStartTime || act.startTime;
                                 const effEnd = act.displayEndTime || act.endTime;
                                 const duration = getDurationInMinutes(effStart, effEnd);
+                                const timeLabel = act.displayTimeText || `${formatTimeHHMM(act.startTime)}〜${formatTimeHHMM(act.endTime)}`;
                                 if (duration < 45) {
                                   return (
                                     <div className="h-full flex items-center gap-1.5 text-[11px] font-bold w-full select-none overflow-hidden pr-0.5">
@@ -1194,7 +1239,7 @@ export default function DailyActivityTable({
                                         {getSurnameOnly(act.clientName)}
                                       </div>
                                       <div className="font-mono font-black text-[11px] text-slate-850 tracking-tighter shrink-0 leading-none text-left">
-                                        {act.displayTimeText || `${formatTimeHHMM(effStart)}〜${formatTimeHHMM(effEnd)}`}
+                                        {timeLabel}
                                       </div>
                                       <div className="ml-auto shrink-0 flex items-center gap-0.5 max-w-[40%] overflow-hidden">
                                         {act.serviceCode && (
@@ -1213,7 +1258,7 @@ export default function DailyActivityTable({
                                           {getSurnameOnly(act.clientName)}
                                         </span>
                                         <span className="text-[11px] text-slate-850 font-mono font-black tracking-tighter shrink-0 text-left">
-                                          {act.displayTimeText || `${formatTimeHHMM(effStart)}〜${formatTimeHHMM(effEnd)}`}
+                                          {timeLabel}
                                         </span>
                                       </div>
 
