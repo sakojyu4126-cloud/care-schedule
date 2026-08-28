@@ -73,6 +73,88 @@ export const INITIAL_SETTINGS: AppSettings = {
           shifts: ["", "", "", "", "", "", "", "", "b", "", "", "b", "", "b", "", "", "", "", "", "/", "×", "b", "", "", "b", "", "/", "×", "b", "", "b"]
         }
       ]
+    },
+    {
+      month: "2026-08",
+      rows: [
+        {
+          helperName: "西條 廣一",
+          shifts: ["C", "C", "/", "C", "C", "C", "×", "C", "C", "C", "/", "A", "C", "有", "C", "/", "D", "A", "A", "C", "/", "C", "C", "C", "/", "A", "/", "C", "C", "C", "/"]
+        },
+        {
+          helperName: "長島 睦枝",
+          shifts: ["C", "C", "C", "/", "C", "C", "C", "/", "×", "C", "C", "C", "/", "C", "/", "C", "C", "C", "C", "/", "C", "C", "C", "×", "C", "C", "C", "C", "/", "D", "C"]
+        },
+        {
+          helperName: "吉田 J",
+          shifts: ["A", "/", "A", "A", "A", "A", "/", "A", "C", "A", "A", "A", "/", "C", "C", "C", "C", "/", "A", "C", "C", "A", "/", "有", "C", "A", "/", "A", "C", "C", "C"]
+        },
+        {
+          helperName: "安田 真弓",
+          shifts: ["/", "A", "A", "A", "/", "A", "A", "/", "A", "A", "A", "/", "A", "A", "/", "A", "A", "D", "/", "A", "/", "A", "A", "A", "/", "A", "A", "A", "A", "A", "D"]
+        },
+        {
+          helperName: "齋藤 公明",
+          shifts: ["A", "A", "×", "/", "A", "A", "A", "A", "A", "/", "/", "A", "A", "A", "A", "/", "A", "A", "A", "/", "A", "A", "A", "/", "A", "A", "A", "有", "/", "有", "/"]
+        },
+        {
+          helperName: "水田 祐里子",
+          shifts: ["×", "A", "C", "C", "A", "/", "C", "C", "A", "/", "C", "C", "C", "/", "A", "A", "×", "C", "C", "A", "D", "/", "A", "C", "/", "C", "C", "A", "/", "A", "A"]
+        },
+        {
+          helperName: "豊川 英子",
+          shifts: ["A", "/", "A", "A", "/", "D", "A", "A", "/", "A", "A", "/", "A", "A", "×", "A", "A", "A", "/", "A", "A", "D", "/", "A", "A", "/", "A", "/", "A", "A", "A"]
+        },
+        {
+          helperName: "松井 真実",
+          shifts: ["a", "", "a", "", "", "a", "", "", "", "a", "", "", "a", "", "a", "", "", "", "", "", "", "a", "", "", "a", "", "", "", "a", "", "a"]
+        },
+        {
+          helperName: "藤吉 俊之",
+          shifts: ["", "", "", "", "", "", "", "", "b", "", "", "b", "", "b", "", "", "", "", "", "/", "×", "b", "", "", "b", "", "/", "×", "b", "", "b"]
+        }
+      ]
+    },
+    {
+      month: "2026-09",
+      rows: [
+        {
+          helperName: "西條 廣一",
+          shifts: ["C", "C", "/", "C", "C", "C", "×", "C", "C", "C", "/", "A", "C", "有", "C", "/", "D", "A", "A", "C", "/", "C", "C", "C", "/", "A", "/", "C", "C", "C"]
+        },
+        {
+          helperName: "長島 睦枝",
+          shifts: ["C", "C", "C", "/", "C", "C", "C", "/", "×", "C", "C", "C", "/", "C", "/", "C", "C", "C", "C", "/", "C", "C", "C", "×", "C", "C", "C", "C", "/", "D"]
+        },
+        {
+          helperName: "吉田 J",
+          shifts: ["A", "/", "A", "A", "A", "A", "/", "A", "C", "A", "A", "A", "/", "C", "C", "C", "C", "/", "A", "C", "C", "A", "/", "有", "C", "A", "/", "A", "C", "C"]
+        },
+        {
+          helperName: "安田 真弓",
+          shifts: ["/", "A", "A", "A", "/", "A", "A", "/", "A", "A", "A", "/", "A", "A", "/", "A", "A", "D", "/", "A", "/", "A", "A", "A", "/", "A", "A", "A", "A", "A"]
+        },
+        {
+          helperName: "齋藤 公明",
+          shifts: ["A", "A", "×", "/", "A", "A", "A", "A", "A", "/", "/", "A", "A", "A", "A", "/", "A", "A", "A", "/", "A", "A", "A", "/", "A", "A", "A", "有", "/", "有"]
+        },
+        {
+          helperName: "水田 祐里子",
+          shifts: ["×", "A", "C", "C", "A", "/", "C", "C", "A", "/", "C", "C", "C", "/", "A", "A", "×", "C", "C", "A", "D", "/", "A", "C", "/", "C", "C", "A", "/", "A"]
+        },
+        {
+          helperName: "豊川 英子",
+          shifts: ["A", "/", "A", "A", "/", "D", "A", "A", "/", "A", "A", "/", "A", "A", "×", "A", "A", "A", "/", "A", "A", "D", "/", "A", "A", "/", "A", "/", "A", "A"]
+        },
+        {
+          helperName: "松井 真実",
+          shifts: ["a", "", "a", "", "", "a", "", "", "", "a", "", "", "a", "", "a", "", "", "", "", "", "", "a", "", "", "a", "", "", "", "a", ""]
+        },
+        {
+          helperName: "藤吉 俊之",
+          shifts: ["", "", "", "", "", "", "", "", "b", "", "", "b", "", "b", "", "", "", "", "", "/", "×", "b", "", "", "b", "", "/", "×", "b", ""]
+        }
+      ]
     }
   ]
 };
@@ -80,7 +162,7 @@ export const INITIAL_SETTINGS: AppSettings = {
 // Generates unique IDs
 const uuid = () => Math.random().toString(36).substring(2, 9);
 
-export const INITIAL_CLIENTS: Client[] = [
+const RAW_INITIAL_CLIENTS: Client[] = [
   // WING 1 (Yellow)
   {
     id: "c-1",
@@ -866,6 +948,28 @@ export const INITIAL_CLIENTS: Client[] = [
     }
   }
 ];
+
+export const INITIAL_CLIENTS: Client[] = RAW_INITIAL_CLIENTS.map(c => {
+  const allServices: any[] = [];
+  const seen = new Set<string>();
+  c.weeklyServices.forEach(s => {
+    const key = `${s.startTime}_${s.endTime}_${s.serviceCode}_${s.memo}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      for (let day = 0; day <= 6; day++) {
+        allServices.push({
+          ...s,
+          id: `${s.id}-d${day}`,
+          dayOfWeek: day
+        });
+      }
+    }
+  });
+  return {
+    ...c,
+    weeklyServices: allServices
+  };
+});
 
 export const INITIAL_EXTRAORDINARY_REPORTS: ExtraordinaryReport[] = [
   {

@@ -63,7 +63,13 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          return syncActivitiesWithClients(parsed, cList, sObj, [getTodayDateString()]);
+          const clientActsToday = parsed.filter((a: DailyActivity) => a.date === getTodayDateString() && a.clientId !== null);
+          if (clientActsToday.length === 0) {
+            const todayActs = extractDailyActivities(getTodayDateString(), cList, sObj);
+            const withoutToday = parsed.filter((a: DailyActivity) => a.date !== getTodayDateString());
+            return [...withoutToday, ...todayActs];
+          }
+          return updateClientInfoInActivities(parsed, cList);
         }
       } catch (e) {
         // fallback
@@ -450,17 +456,18 @@ export default function App() {
     setActivities(prevActivities => updateClientInfoInActivities(prevActivities, clients));
   }, [clients]);
 
-  // If viewing a date that has no activities recorded yet, initialize once from weekly schedule
+  // If viewing a date that has no activities recorded yet (or only empty breaks), initialize once from weekly schedule
   useEffect(() => {
     setActivities(prevActivities => {
-      const hasActivitiesForDate = prevActivities.some(a => a.date === selectedDate);
-      if (!hasActivitiesForDate) {
+      const clientActsForDate = prevActivities.filter(a => a.date === selectedDate && a.clientId !== null);
+      if (clientActsForDate.length === 0) {
         const extracted = extractDailyActivities(selectedDate, clients, settings);
-        return [...prevActivities, ...extracted];
+        const withoutDate = prevActivities.filter(a => a.date !== selectedDate);
+        return [...withoutDate, ...extracted];
       }
       return prevActivities;
     });
-  }, [selectedDate]);
+  }, [selectedDate, clients, settings]);
 
   const handleExtractFromWeekly = () => {
     const extracted = extractDailyActivities(selectedDate, clients, settings);

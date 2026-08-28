@@ -80,26 +80,30 @@ export function resolveHelperRoutesForDate(
     return dateOverrides.map(r => ({ ...r, name: normalizeHelperName(r.name) }));
   }
 
-  const baseRoutes = [
-    { key: "A1", name: "未割り当て" },
-    { key: "A2", name: "未割り当て" },
-    { key: "A3", name: "未割り当て" },
-    { key: "A4", name: "未割り当て" },
-    { key: "B",  name: "未割り当て" },
-    { key: "C1", name: "未割り当て" },
-    { key: "C2", name: "未割り当て" },
-    { key: "C3", name: "未割り当て" }
-  ];
+  const defaultRoutes = (settings.helperRoutes && settings.helperRoutes.length > 0)
+    ? settings.helperRoutes
+    : [
+        { key: "A1", name: "未割り当て" },
+        { key: "A2", name: "未割り当て" },
+        { key: "A3", name: "未割り当て" },
+        { key: "A4", name: "未割り当て" },
+        { key: "B",  name: "未割り当て" },
+        { key: "C1", name: "未割り当て" },
+        { key: "C2", name: "未割り当て" },
+        { key: "C3", name: "未割り当て" }
+      ];
 
   const parts = dateStr.split("-");
-  if (parts.length < 3) return baseRoutes;
+  if (parts.length < 3) return defaultRoutes.map(r => ({ ...r, name: normalizeHelperName(r.name) }));
   const year = Number(parts[0]);
   const month = Number(parts[1]);
   const day = Number(parts[2]);
   const monthKey = `${year}-${String(month).padStart(2, "0")}`;
 
   const monthShift = settings.helperMonthShifts?.find(m => m.month === monthKey);
-  if (!monthShift) return baseRoutes;
+  if (!monthShift) {
+    return defaultRoutes.map(r => ({ ...r, name: normalizeHelperName(r.name) }));
+  }
 
   const dayIndex = day - 1; // 0..30
 
@@ -122,7 +126,7 @@ export function resolveHelperRoutesForDate(
   let aIdx = 0;
   let cIdx = 0;
 
-  return baseRoutes.map(rt => {
+  return defaultRoutes.map(rt => {
     let resolvedName = rt.name;
 
     if (rt.key === "A1") {
