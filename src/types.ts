@@ -125,6 +125,9 @@ export interface AppSettings {
     }[];
   };
   visibleExtraColumns?: string[];
+  dateVisibleExtraColumns?: {
+    [dateStr: string]: string[];
+  };
   weeklyRoutes?: string[];
   weeklyBreakTimes?: {
     [routeAndDay: string]: {

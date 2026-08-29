@@ -315,46 +315,6 @@ export default function DailyActivityTable({
   const [generalMsg, setGeneralMsg] = useState(settings.generalInstruction);
   const [showMessages, setShowMessages] = useState(true);
 
-  const [visibleRoutes, setVisibleRoutes] = useState<string[]>(() => {
-    const active = settings.helperRoutes
-      .filter(r => r.name && r.name !== "未割り当て" && r.name !== "")
-      .map(r => r.key);
-    return active.length > 0 ? active : settings.helperRoutes.map(r => r.key);
-  });
-
-  const visibleExtraColumns = settings.visibleExtraColumns || [];
-
-  const handleToggleExtraColumn = (key: string) => {
-    let next;
-    if (visibleExtraColumns.includes(key)) {
-      next = visibleExtraColumns.filter(k => k !== key);
-    } else {
-      next = [...visibleExtraColumns, key];
-    }
-    onUpdateSettings({
-      ...settings,
-      visibleExtraColumns: next
-    });
-  };
-
-  React.useEffect(() => {
-    const activeKeys = settings.helperRoutes
-      .filter(r => r.name && r.name !== "未割り当て" && r.name !== "")
-      .map(r => r.key);
-    
-    setVisibleRoutes(prev => {
-      const next = [...prev];
-      let changed = false;
-      for (const key of activeKeys) {
-        if (!next.includes(key)) {
-          next.push(key);
-          changed = true;
-        }
-      }
-      return changed ? next : prev;
-    });
-  }, [settings.helperRoutes]);
-
   const timeOptions: string[] = [];
   for (let h = 7; h <= 20; h++) {
     const hourStr = h.toString().padStart(2, "0");
@@ -462,8 +422,9 @@ export default function DailyActivityTable({
     });
   };
 
+  const currentDateStr = selectedDate || activities[0]?.date || getTodayDateString();
+
   const handleHelperChange = (routeKey: string, newName: string) => {
-    const dateStr = selectedDate || getTodayDateString();
     const currentResolved = resolvedHelperRoutes;
     const updatedRoutes = currentResolved.map(r => 
       r.key === routeKey ? { ...r, name: newName } : r
@@ -473,21 +434,9 @@ export default function DailyActivityTable({
       ...settings,
       dateHelperRoutes: {
         ...(settings.dateHelperRoutes || {}),
-        [dateStr]: updatedRoutes
+        [currentDateStr]: updatedRoutes
       }
     });
-  };
-
-  const handleResetHelperRoutes = () => {
-    const dateStr = selectedDate || getTodayDateString();
-    if (settings.dateHelperRoutes && settings.dateHelperRoutes[dateStr]) {
-      const updatedOverrides = { ...settings.dateHelperRoutes };
-      delete updatedOverrides[dateStr];
-      onUpdateSettings({
-        ...settings,
-        dateHelperRoutes: updatedOverrides
-      });
-    }
   };
 
   const openEditModal = (activity: DailyActivity) => {
@@ -662,8 +611,7 @@ export default function DailyActivityTable({
   const [showShiftPanel, setShowShiftPanel] = useState(true);
 
   const getTodayHelperShifts = () => {
-    const dateStr = selectedDate || activities[0]?.date || getTodayDateString();
-    const parts = dateStr.split("-");
+    const parts = currentDateStr.split("-");
     if (parts.length < 3) return null;
     const year = Number(parts[0]);
     const month = Number(parts[1]);
@@ -672,7 +620,7 @@ export default function DailyActivityTable({
 
     const monthShift = settings.helperMonthShifts?.find(m => m.month === monthKey);
     if (!monthShift) {
-      return { dateStr, year, month, day, hasData: false, onDuty: [], offDuty: [] };
+      return { dateStr: currentDateStr, year, month, day, hasData: false, onDuty: [], offDuty: [] };
     }
 
     const dayIndex = day - 1;
@@ -696,7 +644,7 @@ export default function DailyActivityTable({
     }
 
     return {
-      dateStr,
+      dateStr: currentDateStr,
       year,
       month,
       day,
@@ -707,11 +655,69 @@ export default function DailyActivityTable({
   };
 
   const resolvedHelperRoutes = React.useMemo(() => {
-    const dateStr = selectedDate || getTodayDateString();
-    return resolveHelperRoutesForDate(dateStr, settings);
-  }, [settings, selectedDate]);
+    return resolveHelperRoutesForDate(currentDateStr, settings);
+  }, [settings, currentDateStr]);
 
   const todayShiftInfo = getTodayHelperShifts();
+
+  const visibleExtraColumns = React.useMemo(() => {
+    // 1. If explicitly configured for this specific date (including empty []), use it
+    if (settings.dateVisibleExtraColumns && settings.dateVisibleExtraColumns[currentDateStr] !== undefined) {
+      return settings.dateVisibleExtraColumns[currentDateStr];
+    }
+    // 2. Otherwise auto-detect from shift assignments for this specific date
+    const activeResolved = resolvedHelperRoutes.filter(r => r.name && r.name !== "未割り当て" && r.name !== "");
+    const extraWithHelpers = activeResolved
+      .map(r => r.key)
+      .filter(k => k === "A4" || k === "B" || k === "C3");
+
+    if (extraWithHelpers.length > 0) {
+      return extraWithHelpers;
+    }
+
+    // 3. Fallback to settings.visibleExtraColumns if present
+    return settings.visibleExtraColumns || [];
+  }, [settings.dateVisibleExtraColumns, settings.visibleExtraColumns, currentDateStr, resolvedHelperRoutes]);
+
+  const handleToggleExtraColumn = (key: string) => {
+    let next: string[];
+    if (visibleExtraColumns.includes(key)) {
+      next = visibleExtraColumns.filter(k => k !== key);
+    } else {
+      next = [...visibleExtraColumns, key];
+    }
+    onUpdateSettings({
+      ...settings,
+      dateVisibleExtraColumns: {
+        ...(settings.dateVisibleExtraColumns || {}),
+        [currentDateStr]: next
+      }
+    });
+  };
+
+  const handleClearExtraColumns = () => {
+    onUpdateSettings({
+      ...settings,
+      dateVisibleExtraColumns: {
+        ...(settings.dateVisibleExtraColumns || {}),
+        [currentDateStr]: []
+      }
+    });
+  };
+
+  const handleResetHelperRoutes = () => {
+    const updatedOverrides = { ...(settings.dateHelperRoutes || {}) };
+    delete updatedOverrides[currentDateStr];
+
+    const updatedExtraCols = { ...(settings.dateVisibleExtraColumns || {}) };
+    delete updatedExtraCols[currentDateStr];
+
+    onUpdateSettings({
+      ...settings,
+      dateHelperRoutes: updatedOverrides,
+      dateVisibleExtraColumns: updatedExtraCols
+    });
+  };
 
   const filteredRoutes = React.useMemo(() => {
     const allowedKeys = new Set([
@@ -783,7 +789,6 @@ export default function DailyActivityTable({
     return Array.from(list).sort();
   }, [settings.helpersList, filteredRoutes]);
 
-  const currentDateStr = selectedDate || getTodayDateString();
   const effectiveDateActivities = React.useMemo(() => {
     return mergeActivitiesWithReports(activities, reports, currentDateStr, settings, clients || []);
   }, [activities, reports, currentDateStr, settings, clients]);
@@ -871,11 +876,11 @@ export default function DailyActivityTable({
                       );
                     })}
                   </div>
-                  {settings.dateHelperRoutes?.[selectedDate || getTodayDateString()] && (
+                  {(settings.dateHelperRoutes?.[currentDateStr] || settings.dateVisibleExtraColumns?.[currentDateStr]) && (
                     <button
                       onClick={handleResetHelperRoutes}
                       className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded cursor-pointer transition-colors shrink-0"
-                      title="個別の手動変更を解除し、シフト表通りのヘルパー配置にリセットします"
+                      title="個別の手動変更を解除し、シフト表通りのヘルパー配置・列数にリセットします"
                     >
                       <RefreshCw className="w-3 h-3 text-indigo-600 animate-spin-once" />
                       <span>シフト通りに再同期</span>
@@ -891,19 +896,14 @@ export default function DailyActivityTable({
 
             <div className="flex items-center gap-1 shrink-0 bg-slate-100 border border-slate-250 p-0.5 rounded-lg shadow-3xs">
               <button
-                onClick={() => {
-                  onUpdateSettings({
-                    ...settings,
-                    visibleExtraColumns: []
-                  });
-                }}
+                onClick={handleClearExtraColumns}
                 className={`text-[9px] font-black px-2 py-1 rounded-md transition-all select-none cursor-pointer border ${
                   visibleExtraColumns.length === 0 
                     ? "bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed opacity-60" 
                     : "bg-white hover:bg-red-50 text-red-600 border-red-200 hover:border-red-300 shadow-3xs"
                 }`}
                 disabled={visibleExtraColumns.length === 0}
-                title="すべての追加列を非表示にして、基本5列に戻します"
+                title="この日の追加列をすべて非表示にして、基本5列に戻します"
               >
                 列を削除
               </button>
