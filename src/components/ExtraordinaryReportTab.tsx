@@ -228,6 +228,23 @@ export default function ExtraordinaryReportTab({
     setFaxTargetPeriod(calculateTargetPeriod(newDateStr));
   };
 
+  const handleSearchMonthChange = (monthStr: string) => {
+    setSearchMonth(monthStr);
+    if (monthStr) {
+      const m = parseInt(monthStr, 10);
+      const currentYear = sendDate ? new Date(sendDate).getFullYear() : new Date().getFullYear();
+      const lastDay = new Date(currentYear, m, 0).getDate();
+      const reiwaYear = currentYear - 2018;
+      setFaxTargetPeriod(`R${reiwaYear}年度 ${m}月1日 ～ ${m}月${lastDay}日 迄`);
+      
+      // 送信日は翌月1日に設定 (12月なら翌年1月1日)
+      const nextMonth = m === 12 ? 1 : m + 1;
+      const sendYear = m === 12 ? currentYear + 1 : currentYear;
+      const formattedSendDate = `${sendYear}-${String(nextMonth).padStart(2, "0")}-01`;
+      setSendDate(formattedSendDate);
+    }
+  };
+
   const handlePrint = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -442,11 +459,42 @@ export default function ExtraordinaryReportTab({
     }
   };
 
+  const getTargetMonthForFax = (): string => {
+    if (searchMonth) return searchMonth;
+    const match = faxTargetPeriod.match(/(\d{1,2})月/);
+    if (match) return String(parseInt(match[1], 10));
+    if (sendDate) {
+      const d = new Date(sendDate);
+      if (!isNaN(d.getTime())) {
+        let m = d.getMonth();
+        if (m === 0) m = 12;
+        return String(m);
+      }
+    }
+    return "";
+  };
+
+  const targetFaxMonth = getTargetMonthForFax();
+
   const faxClientReports = selectedFaxClient
-    ? ascSortedReports.filter(r =>
-        r.clientId === selectedFaxClient.id ||
-        (r.clientName && selectedFaxClient.kanjiName && (r.clientName === selectedFaxClient.kanjiName || r.clientName.includes(selectedFaxClient.nickname)))
-      )
+    ? ascSortedReports.filter(r => {
+        const isClient = r.clientId === selectedFaxClient.id ||
+          (r.clientName && selectedFaxClient.kanjiName && (
+            r.clientName === selectedFaxClient.kanjiName ||
+            r.clientName.replace(/\s+/g, "") === selectedFaxClient.kanjiName.replace(/\s+/g, "") ||
+            (selectedFaxClient.nickname && r.clientName.includes(selectedFaxClient.nickname))
+          ));
+        if (!isClient) return false;
+
+        if (targetFaxMonth) {
+          const rawD = getReportRawDate(r);
+          const repMonth = getMonthFromDateStr(rawD);
+          if (repMonth && repMonth !== targetFaxMonth) {
+            return false;
+          }
+        }
+        return true;
+      })
     : [];
 
   return (
@@ -546,7 +594,7 @@ export default function ExtraordinaryReportTab({
             <span className="text-slate-500 shrink-0">3. 対象月:</span>
             <select
               value={searchMonth}
-              onChange={(e) => setSearchMonth(e.target.value)}
+              onChange={(e) => handleSearchMonthChange(e.target.value)}
               className="w-full bg-transparent outline-none font-bold text-slate-800 cursor-pointer"
             >
               <option value="">すべての月 (全表示)</option>

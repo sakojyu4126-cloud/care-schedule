@@ -226,7 +226,22 @@ export default function MobileHelperView({
 
   // 2. Filter active helper routes to match desktop visible columns (perfectly synchronized)
   const visibleRoutes = React.useMemo(() => {
-    const visibleExtra = settings.visibleExtraColumns || [];
+    let visibleExtra: string[] = [];
+    if (settings.dateVisibleExtraColumns && settings.dateVisibleExtraColumns[selectedDate] !== undefined) {
+      visibleExtra = settings.dateVisibleExtraColumns[selectedDate];
+    } else {
+      const activeResolved = resolvedHelperRoutes.filter(r => r.name && r.name !== "未割り当て" && r.name !== "");
+      const extraWithHelpers = activeResolved
+        .map(r => r.key)
+        .filter(k => k === "A4" || k === "B" || k === "C3");
+
+      if (extraWithHelpers.length > 0) {
+        visibleExtra = extraWithHelpers;
+      } else {
+        visibleExtra = settings.visibleExtraColumns || [];
+      }
+    }
+
     const allowedKeys = new Set([
       "A1", "A2", "A3", "C1", "C2",
       ...visibleExtra
@@ -258,7 +273,7 @@ export default function MobileHelperView({
     currentRoutes.sort((a, b) => (orderMap[a.key] || 99) - (orderMap[b.key] || 99));
 
     return currentRoutes.filter(rt => allowedKeys.has(rt.key));
-  }, [resolvedHelperRoutes, settings.visibleExtraColumns]);
+  }, [resolvedHelperRoutes, settings.dateVisibleExtraColumns, settings.visibleExtraColumns, selectedDate]);
 
   // Helper function to resolve caregiver name for a given activity route on the selected day
   const getHelperForActivity = (act: DailyActivity) => {
@@ -1110,7 +1125,7 @@ export default function MobileHelperView({
                                           休憩
                                         </span>
                                         <span className="text-[6.8px] font-mono opacity-90 leading-none tracking-tighter shrink-0 ml-auto">
-                                          {formatTimeHHMM(effStart)}-{formatTimeHHMM(effEnd)}
+                                          {formatTimeHHMM(act.startTime)}-{formatTimeHHMM(act.endTime)}
                                         </span>
                                       </div>
                                     ) : (
@@ -1119,7 +1134,7 @@ export default function MobileHelperView({
                                           {getSurnameOnly(act.clientName, clients)}
                                         </span>
                                         <span className="text-[6.8px] font-mono font-bold opacity-90 leading-none tracking-tighter shrink-0 ml-auto">
-                                          {act.displayTimeText || `${formatTimeHHMM(effStart)}-${formatTimeHHMM(effEnd)}`}
+                                          {act.displayTimeText || `${formatTimeHHMM(act.startTime)}-${formatTimeHHMM(act.endTime)}`}
                                         </span>
                                       </div>
                                     )
@@ -1130,7 +1145,7 @@ export default function MobileHelperView({
                                           休憩
                                         </div>
                                         <div className="text-[7px] font-mono opacity-90 leading-none tracking-tighter truncate whitespace-nowrap">
-                                          {formatTimeHHMM(effStart)}-{formatTimeHHMM(effEnd)}
+                                          {formatTimeHHMM(act.startTime)}-{formatTimeHHMM(act.endTime)}
                                         </div>
                                       </div>
                                     ) : (
@@ -1139,7 +1154,7 @@ export default function MobileHelperView({
                                           {getSurnameOnly(act.clientName, clients)}
                                         </div>
                                         <div className="text-[7px] font-mono font-bold opacity-90 leading-none tracking-tighter truncate whitespace-nowrap">
-                                          {act.displayTimeText || `${formatTimeHHMM(effStart)}-${formatTimeHHMM(effEnd)}`}
+                                          {act.displayTimeText || `${formatTimeHHMM(act.startTime)}-${formatTimeHHMM(act.endTime)}`}
                                         </div>
                                       </div>
                                     )
@@ -1268,7 +1283,7 @@ export default function MobileHelperView({
                       <Sparkles className="w-3.5 h-3.5 text-amber-200 shrink-0" />
                       <span className="font-extrabold">休憩時間</span>
                     </div>
-                    <span className="font-mono font-black mr-2 text-white/90">{formatTimeHHMM(effStart)}〜{formatTimeHHMM(effEnd)}</span>
+                    <span className="font-mono font-black mr-2 text-white/90">{formatTimeHHMM(act.startTime)}〜{formatTimeHHMM(act.endTime)}</span>
                   </div>
                 ) : (
                   <div className="p-3.5 flex flex-col justify-center">
@@ -1286,7 +1301,7 @@ export default function MobileHelperView({
                             {getSurnameOnly(act.clientName, clients)}様
                           </span>
                           <span className="font-bold text-slate-700 text-[11px] bg-white/50 px-1 py-0.5 rounded-sm font-mono tracking-tight shrink-0 whitespace-nowrap">
-                            {formatTimeHHMM(effStart)}〜{formatTimeHHMM(effEnd)}
+                            {act.displayTimeText || `${formatTimeHHMM(act.startTime)}〜${formatTimeHHMM(act.endTime)}`}
                           </span>
                           {act.serviceCode && (
                             <span className="text-[9px] bg-indigo-100/90 border border-indigo-200 text-indigo-950 font-black px-1 py-0.5 rounded shadow-2xs leading-none shrink-0 whitespace-nowrap truncate max-w-[80px]">
@@ -1323,7 +1338,7 @@ export default function MobileHelperView({
                               {getSurnameOnly(act.clientName, clients)} 様
                             </span>
                             <span className="font-bold text-slate-700 text-[11px] bg-white/50 px-1.5 py-0.5 rounded-sm font-mono tracking-tight shrink-0">
-                              {formatTimeHHMM(effStart)}〜{formatTimeHHMM(effEnd)}
+                              {act.displayTimeText || `${formatTimeHHMM(act.startTime)}〜${formatTimeHHMM(act.endTime)}`}
                             </span>
                             {cardStickers.length > 0 && (
                               <span className="flex items-center gap-1 shrink-0 bg-red-50/80 border border-red-200/50 px-1.5 py-0.5 rounded-sm animate-[pulse_1.5s_infinite]">
