@@ -234,16 +234,12 @@ export default function MobileHelperView({
     if (settings.dateVisibleExtraColumns && settings.dateVisibleExtraColumns[selectedDate] !== undefined) {
       visibleExtra = settings.dateVisibleExtraColumns[selectedDate];
     } else {
-      const activeResolved = resolvedHelperRoutes.filter(r => r.name && r.name !== "未割り当て" && r.name !== "");
+      const activeResolved = resolvedHelperRoutes.filter(r => r.name && r.name !== "未割り当て" && r.name !== "未割当" && r.name !== "");
       const extraWithHelpers = activeResolved
         .map(r => r.key)
         .filter(k => k === "A4" || k === "B" || k === "C3");
 
-      if (extraWithHelpers.length > 0) {
-        visibleExtra = extraWithHelpers;
-      } else {
-        visibleExtra = settings.visibleExtraColumns || [];
-      }
+      visibleExtra = extraWithHelpers;
     }
 
     const allowedKeys = new Set([
@@ -251,22 +247,21 @@ export default function MobileHelperView({
       ...visibleExtra
     ]);
 
-    const defaultRoutes = [
-      { key: "A1", name: "水田 祐里子" },
-      { key: "A2", name: "齋藤 公明" },
-      { key: "A3", name: "安田 真弓" },
+    const baseDefaultRoutes = [
+      { key: "A1", name: "未割り当て" },
+      { key: "A2", name: "未割り当て" },
+      { key: "A3", name: "未割り当て" },
       { key: "A4", name: "未割り当て" },
-      { key: "B", name: "未割り当て" },
-      { key: "C1", name: "吉田 J" },
-      { key: "C2", name: "西條 廣一" },
+      { key: "B",  name: "未割り当て" },
+      { key: "C1", name: "未割り当て" },
+      { key: "C2", name: "未割り当て" },
       { key: "C3", name: "未割り当て" }
     ];
 
     const currentRoutes = [...resolvedHelperRoutes];
     const existingKeys = new Set(currentRoutes.map(r => r.key));
 
-    // Automatically fill in default routes if they are missing
-    defaultRoutes.forEach(def => {
+    baseDefaultRoutes.forEach(def => {
       if (!existingKeys.has(def.key)) {
         currentRoutes.push(def);
       }
@@ -277,7 +272,7 @@ export default function MobileHelperView({
     currentRoutes.sort((a, b) => (orderMap[a.key] || 99) - (orderMap[b.key] || 99));
 
     return currentRoutes.filter(rt => allowedKeys.has(rt.key));
-  }, [resolvedHelperRoutes, settings.dateVisibleExtraColumns, settings.visibleExtraColumns, selectedDate]);
+  }, [resolvedHelperRoutes, settings.dateVisibleExtraColumns, selectedDate]);
 
   // Helper function to resolve caregiver name for a given activity route on the selected day
   const getHelperForActivity = (act: DailyActivity) => {
@@ -992,11 +987,11 @@ export default function MobileHelperView({
             )}
           </div>
 
-      {/* Mobile Shift Grid Board: 5 columns layout for visual collaboration (Requested by User) */}
+      {/* Mobile Shift Grid Board: dynamic columns layout for visual collaboration (Requested by User) */}
       <div className="px-3 py-1.5">
         <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2">
           <div className="flex flex-col">
-            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">👥 5名体制シフトボード (連携確認用)</span>
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">👥 {visibleRoutes.length}名体制シフトボード (連携確認用)</span>
             <span className="text-[9px] text-indigo-600 font-extrabold mt-0.5">※担当者名をタップすると、その方の指示＆業務リストに絞り込めます</span>
           </div>
           

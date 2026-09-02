@@ -92,7 +92,7 @@ export function normalizeHelperName(name?: string | null): string {
 
 /**
  * Permanently purges and cleans any invalid helper records (like "R）", "(R)", non-names)
- * from settings, month shifts, default routes, date overrides, and helper lists.
+ * and retired helpers not in helpersList from settings, month shifts, default routes, date overrides, and helper lists.
  */
 export function cleanSettings(settings: AppSettings): AppSettings {
   if (!settings) return settings;
@@ -101,26 +101,30 @@ export function cleanSettings(settings: AppSettings): AppSettings {
   const rawList = settings.helpersList || [];
   const cleanedList = rawList
     .map(name => normalizeHelperName(name))
-    .filter(name => !isInvalidHelperName(name) && name !== "未割り当て");
+    .filter(name => !isInvalidHelperName(name) && name !== "未割り当て" && name !== "未割当" && name.length > 0);
   const uniqueHelpers = Array.from(new Set(cleanedList));
+  const validHelperSet = new Set(uniqueHelpers);
 
   // 2. Clean helperRoutes default
   const cleanedHelperRoutes = (settings.helperRoutes || []).map(r => {
     const norm = normalizeHelperName(r.name);
+    const isValid = !isInvalidHelperName(norm) && norm !== "未割り当て" && norm !== "未割当" && (validHelperSet.size === 0 || validHelperSet.has(norm));
     return {
       ...r,
-      name: isInvalidHelperName(norm) ? "未割り当て" : norm
+      name: isValid ? norm : "未割り当て"
     };
   });
 
-  // 3. Clean helperMonthShifts
+  // 3. Clean helperMonthShifts (purge retired helpers and non-names from shift rows)
   const cleanedMonthShifts = (settings.helperMonthShifts || []).map(ms => {
     const cleanedRows = (ms.rows || [])
       .filter(row => {
         if (!row.helperName) return false;
         if (isInvalidHelperName(row.helperName)) return false;
         const norm = normalizeHelperName(row.helperName);
-        return !isInvalidHelperName(norm) && norm !== "未割り当て";
+        if (isInvalidHelperName(norm) || norm === "未割り当て" || norm === "未割当") return false;
+        if (validHelperSet.size > 0 && !validHelperSet.has(norm)) return false;
+        return true;
       })
       .map(row => ({
         ...row,
@@ -139,9 +143,10 @@ export function cleanSettings(settings: AppSettings): AppSettings {
     for (const [dateStr, routes] of Object.entries(cleanedDateHelperRoutes)) {
       newOverrides[dateStr] = routes.map(r => {
         const norm = normalizeHelperName(r.name);
+        const isValid = !isInvalidHelperName(norm) && norm !== "未割り当て" && norm !== "未割当" && (validHelperSet.size === 0 || validHelperSet.has(norm));
         return {
           ...r,
-          name: isInvalidHelperName(norm) ? "未割り当て" : norm
+          name: isValid ? norm : "未割り当て"
         };
       });
     }
@@ -162,32 +167,43 @@ export function resolveHelperRoutesForDate(
   dateStr: string,
   settings: AppSettings
 ): { key: string; name: string }[] {
+  const activeHelperSet = new Set(
+    (settings.helpersList || [])
+      .map(normalizeHelperName)
+      .filter(h => h && !isInvalidHelperName(h) && h !== "未割り当て" && h !== "未割当")
+  );
+
   const dateOverrides = settings.dateHelperRoutes?.[dateStr];
   if (dateOverrides && dateOverrides.length > 0) {
     return dateOverrides.map(r => {
       const norm = normalizeHelperName(r.name);
-      return { ...r, name: isInvalidHelperName(norm) ? "未割り当て" : norm };
+      const isValid = !isInvalidHelperName(norm) && norm !== "未割り当て" && norm !== "未割当" && (activeHelperSet.size === 0 || activeHelperSet.has(norm));
+      return { ...r, name: isValid ? norm : "未割り当て" };
     });
   }
 
+  const baseDefaultRoutes = [
+    { key: "A1", name: "未割り当て" },
+    { key: "A2", name: "未割り当て" },
+    { key: "A3", name: "未割り当て" },
+    { key: "A4", name: "未割り当て" },
+    { key: "B",  name: "未割り当て" },
+    { key: "C1", name: "未割り当て" },
+    { key: "C2", name: "未割り当て" },
+    { key: "C3", name: "未割り当て" }
+  ];
+
   const defaultRoutes = (settings.helperRoutes && settings.helperRoutes.length > 0)
-    ? settings.helperRoutes
-    : [
-        { key: "A1", name: "未割り当て" },
-        { key: "A2", name: "未割り当て" },
-        { key: "A3", name: "未割り当て" },
-        { key: "A4", name: "未割り当て" },
-        { key: "B",  name: "未割り当て" },
-        { key: "C1", name: "未割り当て" },
-        { key: "C2", name: "未割り当て" },
-        { key: "C3", name: "未割り当て" }
-      ];
+    ? settings.helperRoutes.map(r => {
+        const norm = normalizeHelperName(r.name);
+        const isValid = !isInvalidHelperName(norm) && norm !== "未割り当て" && norm !== "未割当" && (activeHelperSet.size === 0 || activeHelperSet.has(norm));
+        return { ...r, name: isValid ? norm : "未割り当て" };
+      })
+    : baseDefaultRoutes;
 
   const parts = dateStr.split("-");
-  if (parts.length < 3) return defaultRoutes.map(r => {
-    const norm = normalizeHelperName(r.name);
-    return { ...r, name: isInvalidHelperName(norm) ? "未割り当て" : norm };
-  });
+  if (parts.length < 3) return defaultRoutes;
+
   const year = Number(parts[0]);
   const month = Number(parts[1]);
   const day = Number(parts[2]);
@@ -195,10 +211,7 @@ export function resolveHelperRoutesForDate(
 
   const monthShift = settings.helperMonthShifts?.find(m => m.month === monthKey);
   if (!monthShift) {
-    return defaultRoutes.map(r => {
-      const norm = normalizeHelperName(r.name);
-      return { ...r, name: isInvalidHelperName(norm) ? "未割り当て" : norm };
-    });
+    return defaultRoutes;
   }
 
   const dayIndex = day - 1; // 0..30
@@ -212,7 +225,9 @@ export function resolveHelperRoutesForDate(
   for (const row of monthShift.rows) {
     if (!row.helperName || isInvalidHelperName(row.helperName)) continue;
     const norm = normalizeHelperName(row.helperName);
-    if (!norm || isInvalidHelperName(norm) || norm === "未割り当て") continue;
+    if (!norm || isInvalidHelperName(norm) || norm === "未割り当て" || norm === "未割当") continue;
+    // Exclude retired helpers not in helpersList
+    if (activeHelperSet.size > 0 && !activeHelperSet.has(norm)) continue;
 
     const code = (row.shifts[dayIndex] || "").trim();
     if (code === "A") aHelpers.push(norm);
@@ -225,31 +240,33 @@ export function resolveHelperRoutesForDate(
   let aIdx = 0;
   let cIdx = 0;
 
-  return defaultRoutes.map(rt => {
-    let resolvedName = rt.name;
+  // For dates with shift tables, strictly assign on-duty helpers for this specific day.
+  // Routes without an on-duty helper MUST remain "未割り当て" (never fallback to stale/unrelated helper names).
+  return baseDefaultRoutes.map(rt => {
+    let resolvedName = "未割り当て";
 
     if (rt.key === "A1") {
-      resolvedName = aHelpers[aIdx++] || rt.name || "未割り当て";
+      resolvedName = aHelpers[aIdx++] || "未割り当て";
     } else if (rt.key === "A2") {
-      resolvedName = aHelpers[aIdx++] || rt.name || "未割り当て";
+      resolvedName = aHelpers[aIdx++] || "未割り当て";
     } else if (rt.key === "A3") {
-      resolvedName = aHelpers[aIdx++] || rt.name || "未割り当て";
-    } else if (rt.key === "C1") {
-      resolvedName = cHelpers[cIdx++] || rt.name || "未割り当て";
-    } else if (rt.key === "C2") {
-      resolvedName = cHelpers[cIdx++] || rt.name || "未割り当て";
+      resolvedName = aHelpers[aIdx++] || "未割り当て";
     } else if (rt.key === "A4") {
-      resolvedName = aHelpers[aIdx++] || aSubHelpers[0] || rt.name || "未割り当て";
+      resolvedName = aHelpers[aIdx++] || aSubHelpers[0] || "未割り当て";
     } else if (rt.key === "B") {
-      resolvedName = bSubHelpers[0] || rt.name || "未割り当て";
+      resolvedName = bSubHelpers[0] || (aSubHelpers.length > 1 ? aSubHelpers[1] : "未割り当て");
+    } else if (rt.key === "C1") {
+      resolvedName = cHelpers[cIdx++] || "未割り当て";
+    } else if (rt.key === "C2") {
+      resolvedName = cHelpers[cIdx++] || "未割り当て";
     } else if (rt.key === "C3") {
-      resolvedName = cHelpers[cIdx++] || dHelpers[0] || rt.name || "未割り当て";
+      resolvedName = cHelpers[cIdx++] || dHelpers[0] || "未割り当て";
     }
 
     const finalNorm = normalizeHelperName(resolvedName);
     return {
       ...rt,
-      name: isInvalidHelperName(finalNorm) ? "未割り当て" : finalNorm
+      name: (isInvalidHelperName(finalNorm) || finalNorm === "未割当") ? "未割り当て" : finalNorm
     };
   });
 }

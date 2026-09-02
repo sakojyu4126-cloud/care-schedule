@@ -618,6 +618,12 @@ export default function DailyActivityTable({
     const day = Number(parts[2]);
     const monthKey = `${year}-${String(month).padStart(2, "0")}`;
 
+    const activeHelperSet = new Set(
+      (settings.helpersList || [])
+        .map(normalizeHelperName)
+        .filter(h => h && !isInvalidHelperName(h) && h !== "未割り当て" && h !== "未割当")
+    );
+
     const monthShift = settings.helperMonthShifts?.find(m => m.month === monthKey);
     if (!monthShift) {
       return { dateStr: currentDateStr, year, month, day, hasData: false, onDuty: [], offDuty: [] };
@@ -636,7 +642,9 @@ export default function DailyActivityTable({
     for (const row of monthShift.rows) {
       if (!row.helperName || isInvalidHelperName(row.helperName)) continue;
       const norm = normalizeHelperName(row.helperName);
-      if (!norm || isInvalidHelperName(norm) || norm === "未割り当て") continue;
+      if (!norm || isInvalidHelperName(norm) || norm === "未割り当て" || norm === "未割当") continue;
+      // Strictly exclude retired helpers not in helpersList
+      if (activeHelperSet.size > 0 && !activeHelperSet.has(norm)) continue;
 
       const code = (row.shifts[dayIndex] || "").trim();
       const isOff = code === "/" || code === "×" || code === "" || code === "公" || code === "休";
@@ -669,19 +677,14 @@ export default function DailyActivityTable({
     if (settings.dateVisibleExtraColumns && settings.dateVisibleExtraColumns[currentDateStr] !== undefined) {
       return settings.dateVisibleExtraColumns[currentDateStr];
     }
-    // 2. Otherwise auto-detect from shift assignments for this specific date
-    const activeResolved = resolvedHelperRoutes.filter(r => r.name && r.name !== "未割り当て" && r.name !== "");
+    // 2. Auto-detect from active resolved shift assignments for this specific date
+    const activeResolved = resolvedHelperRoutes.filter(r => r.name && r.name !== "未割り当て" && r.name !== "未割当" && r.name !== "");
     const extraWithHelpers = activeResolved
       .map(r => r.key)
       .filter(k => k === "A4" || k === "B" || k === "C3");
 
-    if (extraWithHelpers.length > 0) {
-      return extraWithHelpers;
-    }
-
-    // 3. Fallback to settings.visibleExtraColumns if present
-    return settings.visibleExtraColumns || [];
-  }, [settings.dateVisibleExtraColumns, settings.visibleExtraColumns, currentDateStr, resolvedHelperRoutes]);
+    return extraWithHelpers;
+  }, [settings.dateVisibleExtraColumns, currentDateStr, resolvedHelperRoutes]);
 
   const handleToggleExtraColumn = (key: string) => {
     let next: string[];

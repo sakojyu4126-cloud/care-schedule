@@ -317,7 +317,7 @@ export default function App() {
       }
     };
 
-    const interval = setInterval(pollSync, 10000);
+    const interval = setInterval(pollSync, 3000);
     return () => {
       active = false;
       clearInterval(interval);
@@ -493,7 +493,7 @@ export default function App() {
       }
     };
 
-    const timer = setTimeout(pushData, 3000);
+    const timer = setTimeout(pushData, 500);
     return () => clearTimeout(timer);
   }, [clients, activities, settings, reports, freeStickers, clientId]);
 
