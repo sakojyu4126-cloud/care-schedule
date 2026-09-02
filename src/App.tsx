@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { Client, DailyActivity, AppSettings, CareLevel, ExtraordinaryReport, FreeSticker } from "./types";
 import { INITIAL_CLIENTS, INITIAL_SETTINGS, INITIAL_EXTRAORDINARY_REPORTS, INITIAL_ACTIVITIES, INITIAL_FREE_STICKERS, DATA_STORAGE_VERSION } from "./utils/dummyData";
-import { extractDailyActivities, getTodayDateString, syncActivitiesWithClients, updateClientInfoInActivities, cleanSettings } from "./utils/scheduler";
+import { extractDailyActivities, getTodayDateString, syncActivitiesWithClients, updateClientInfoInActivities, cleanSettings, mergeActivitiesWithReports, normalizeDateStr } from "./utils/scheduler";
 import DailyActivityTable from "./components/DailyActivityTable";
 import MobileHelperView from "./components/MobileHelperView";
 import ClientMasterTab from "./components/ClientMasterTab";
@@ -571,10 +571,18 @@ export default function App() {
   };
 
   const handleToggleCheck = (id: string) => {
-    const updated = activities.map((act) => 
-      act.id === id ? { ...act, isChecked: !act.isChecked } : act
-    );
-    setActivities(updated);
+    setActivities(prev => {
+      const exists = prev.some(act => act.id === id);
+      if (exists) {
+        return prev.map(act => act.id === id ? { ...act, isChecked: !act.isChecked } : act);
+      }
+      const baseActs = mergeActivitiesWithReports(prev, reports, selectedDate, settings, clients);
+      const updated = baseActs.map(act => act.id === id ? { ...act, isChecked: !act.isChecked } : act);
+      return [
+        ...prev.filter(act => act.date !== selectedDate && normalizeDateStr(act.date) !== normalizeDateStr(selectedDate)),
+        ...updated
+      ];
+    });
   };
 
   return (

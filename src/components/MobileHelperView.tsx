@@ -288,10 +288,10 @@ export default function MobileHelperView({
     return ["All", ...Array.from(new Set(list)).sort()];
   }, [settings.helpersList]);
 
-  // On mobile view, keep schedule clean by displaying only the regular activity schedule (temporary reports are logged via the report form and viewed on PC)
+  // On mobile view, compute all daily activities merged with extraordinary reports, identical to PC view!
   const effectiveActivities = React.useMemo(() => {
-    return activities.filter(act => act.date === selectedDate || normalizeDateStr(act.date) === normalizeDateStr(selectedDate));
-  }, [activities, selectedDate]);
+    return mergeActivitiesWithReports(activities, reports, selectedDate, settings, clients || []);
+  }, [activities, reports, selectedDate, settings, clients]);
 
   // Filter activities based on selected helper name, selected date & search query with break deduplication
   const filteredActivities = React.useMemo(() => {

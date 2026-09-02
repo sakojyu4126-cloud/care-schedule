@@ -134719,7 +134719,7 @@
       "durationMinutes": 30,
       "reasons": [],
       "freeText": "昼ケア時に訪室した際に便（軟便）の汚染のため、全更衣介助、便付着の靴とトイレ内の清掃を昼食後に行う。",
-      "helperName": "齋藤公明",
+      "helperName": "未割り当て",
       "createdAt": "2026-07-30 06:22",
       "scheduledDate": "7/13 月",
       "scheduledTime": "11:30-11:45",
@@ -134981,7 +134981,7 @@
       "durationMinutes": 45,
       "reasons": [],
       "freeText": "起床時に大量に汚染洗濯下洗い分があり、食事後に洗濯をおこなう。",
-      "helperName": "齋藤公明",
+      "helperName": "未割り当て",
       "createdAt": "2026-07-28 13:42",
       "scheduledDate": "",
       "scheduledTime": "-",
@@ -135003,7 +135003,7 @@
       "durationMinutes": 45,
       "reasons": [],
       "freeText": "尿失禁が大量で衣類と寝具に汚染拡大していたため、寝具全交換と洗濯（汚染が頻回で替えが潤沢でないため）を食事後に実施しました。",
-      "helperName": "齋藤公明",
+      "helperName": "未割り当て",
       "createdAt": "2026-07-28 13:41",
       "scheduledDate": "7/1 水",
       "scheduledTime": "08:15 - 09:00",
@@ -135083,6 +135083,6 @@
     }
   ],
   "freeStickers": [],
-  "updatedAt": 1788350561374,
-  "lastUpdatedBy": "test_verification"
+  "updatedAt": 1788351051709,
+  "lastUpdatedBy": "3gu4ad862f8"
 }

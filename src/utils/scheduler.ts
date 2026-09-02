@@ -446,7 +446,14 @@ export function mergeActivitiesWithReports(
   clients: Client[] = []
 ): DailyActivity[] {
   const targetNorm = normalizeDateStr(targetDate);
-  const dateActivities = activities.filter(act => act.date === targetDate || normalizeDateStr(act.date) === targetNorm);
+  let dateActivities = activities.filter(act => act.date === targetDate || normalizeDateStr(act.date) === targetNorm);
+  
+  // If no saved activities exist for this target date in state, dynamically extract from weekly master
+  // so that both PC and Mobile views always display the accurate, complete schedule!
+  if (dateActivities.length === 0 && settings && clients && clients.length > 0) {
+    dateActivities = extractDailyActivities(targetDate, clients, settings);
+  }
+
   if (!reports || reports.length === 0) return dateActivities;
 
   // 日付の表記揺れ（/ や -、月/日表記など）を吸収して確実に合致する報告を抽出
@@ -890,11 +897,11 @@ export function syncActivitiesWithClients(
         clientName: shortName,
         roomNumber: client.roomNumber,
         wing: getWingFromRoom(client.roomNumber),
-        startTime: matched.service.startTime,
-        endTime: matched.service.endTime,
+        startTime: act.displayStartTime ? act.startTime : matched.service.startTime,
+        endTime: act.displayEndTime ? act.endTime : matched.service.endTime,
         route: act.route || matched.service.route || "A1",
-        serviceCode: getShortenedServiceCode(matched.service.serviceCode),
-        content: matched.service.memo,
+        serviceCode: act.isDailyOverride ? act.serviceCode : getShortenedServiceCode(matched.service.serviceCode),
+        content: act.isDailyOverride ? act.content : (act.content || matched.service.memo),
         isRule8RecordTarget: isMorning,
         displayStartTime: act.displayStartTime || matched.service.displayStartTime,
         displayEndTime: act.displayEndTime || matched.service.displayEndTime,
