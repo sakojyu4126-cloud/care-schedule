@@ -890,6 +890,10 @@ export function syncActivitiesWithClients(
       const isMorning = parseTimeToMinutes(matched.service.startTime) >= parseTimeToMinutes("07:00") && 
                         parseTimeToMinutes(matched.service.endTime) <= parseTimeToMinutes("10:00");
 
+      const finalRoute = act.isDailyOverride && act.route
+        ? act.route
+        : (matched.service.route && matched.service.route.trim() !== "" ? matched.service.route.trim() : (act.route || "A1"));
+
       newDateActs.push({
         ...act,
         id: matched.expectedId,
@@ -897,14 +901,15 @@ export function syncActivitiesWithClients(
         clientName: shortName,
         roomNumber: client.roomNumber,
         wing: getWingFromRoom(client.roomNumber),
-        startTime: act.displayStartTime ? act.startTime : matched.service.startTime,
-        endTime: act.displayEndTime ? act.endTime : matched.service.endTime,
-        route: act.route || matched.service.route || "A1",
-        serviceCode: act.isDailyOverride ? act.serviceCode : getShortenedServiceCode(matched.service.serviceCode),
-        content: act.isDailyOverride ? act.content : (act.content || matched.service.memo),
+        startTime: act.isDailyOverride && act.startTime ? act.startTime : matched.service.startTime,
+        endTime: act.isDailyOverride && act.endTime ? act.endTime : matched.service.endTime,
+        route: finalRoute,
+        serviceCode: act.isDailyOverride && act.serviceCode ? act.serviceCode : getShortenedServiceCode(matched.service.serviceCode),
+        content: act.isDailyOverride && act.content !== undefined ? act.content : (matched.service.memo || ""),
         isRule8RecordTarget: isMorning,
-        displayStartTime: act.displayStartTime || matched.service.displayStartTime,
-        displayEndTime: act.displayEndTime || matched.service.displayEndTime,
+        displayStartTime: act.isDailyOverride ? act.displayStartTime : matched.service.displayStartTime,
+        displayEndTime: act.isDailyOverride ? act.displayEndTime : matched.service.displayEndTime,
+        displayTimeText: act.isDailyOverride ? act.displayTimeText : undefined,
       });
     }
 
