@@ -451,23 +451,17 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [clients, activities, settings, reports, freeStickers, clientId]);
 
-  // Keep client display names & room numbers in sync when clients master updates without moving cards or resurrecting deleted cards
-  useEffect(() => {
-    setActivities(prevActivities => updateClientInfoInActivities(prevActivities, clients));
-  }, [clients]);
+  // Master-to-Daily Synchronization:
+  // When clients master updates (add, remove, edit weekly services), immediately sync current and future activities (today onwards).
+  // Strictly protects past activities prior to today (before getTodayDateString()) without deleting or inserting cards.
+  const handleUpdateClients = (newClients: Client[]) => {
+    setClients(newClients);
+    setActivities(prevActivities => syncActivitiesWithClients(prevActivities, newClients, settings, getTodayDateString(), [selectedDate]));
+  };
 
-  // If viewing a date that has no activities recorded yet (or only empty breaks), initialize once from weekly schedule
   useEffect(() => {
-    setActivities(prevActivities => {
-      const clientActsForDate = prevActivities.filter(a => a.date === selectedDate && a.clientId !== null);
-      if (clientActsForDate.length === 0) {
-        const extracted = extractDailyActivities(selectedDate, clients, settings);
-        const withoutDate = prevActivities.filter(a => a.date !== selectedDate);
-        return [...withoutDate, ...extracted];
-      }
-      return prevActivities;
-    });
-  }, [selectedDate, clients, settings]);
+    setActivities(prevActivities => syncActivitiesWithClients(prevActivities, clients, settings, getTodayDateString(), [selectedDate]));
+  }, [clients, settings, selectedDate]);
 
   const handleExtractFromWeekly = () => {
     const extracted = extractDailyActivities(selectedDate, clients, settings);
@@ -791,7 +785,7 @@ export default function App() {
             {activeTab === "clients" && (
               <ClientMasterTab
                 clients={clients}
-                onUpdateClients={setClients}
+                onUpdateClients={handleUpdateClients}
                 isLocked={isAdminLocked}
                 settings={settings}
                 onUpdateSettings={setSettings}
@@ -803,7 +797,7 @@ export default function App() {
                 settings={settings}
                 onUpdateSettings={setSettings}
                 clients={clients}
-                onUpdateClients={setClients}
+                onUpdateClients={handleUpdateClients}
                 isLocked={isAdminLocked}
                 onSetLock={setIsAdminLocked}
                 onExportBackup={handleExportBackup}

@@ -630,18 +630,206 @@ export function updateClientInfoInActivities(
 
 /**
  * Synchronizes daily activities with the master client database.
- * Preserves all routes, manual overrides, deleted cards, times, and stamps.
+ * 
+ * 1. Historical Protection (Prior to cutOffDate, e.g. before today):
+ *    - Absolutely NEVER deletes or adds schedule cards for dates before cutOffDate (< cutOffDate).
+ *    - Preserves all completed service reports, staff logs, checkmarks, and past schedules.
+ *    - Only gently keeps basic client names/rooms updated via updateClientInfoInActivities.
+ * 
+ * 2. Instant Sync (On and after cutOffDate, e.g. today and future dates):
+ *    - Immediately syncs with client master changes:
+ *      * Removed clients or deleted weekly services are immediately removed from activities.
+ *      * Newly added clients or services are immediately added into activities.
+ *      * Modified services (times, memos, service codes, room numbers) are immediately updated.
+ *      * Manually adjusted positions (route, displayStartTime, displayEndTime) and break/extraordinary cards are preserved.
  */
 export function syncActivitiesWithClients(
   prevActivities: DailyActivity[],
   clients: Client[],
-  _settings?: AppSettings,
-  _ensureDates?: string[]
+  settings?: AppSettings,
+  cutOffDate: string = getTodayDateString(),
+  ensureDates: string[] = []
 ): DailyActivity[] {
-  if (!prevActivities || prevActivities.length === 0) {
-    return [];
+  if (!prevActivities) prevActivities = [];
+
+  const clientMap = new Map<string, Client>(clients.map(c => [c.id, c]));
+
+  // 1. Separate activities into past (strictly before cutOffDate) and current/future (cutOffDate or later)
+  const pastActivities = prevActivities.filter(act => act.date < cutOffDate);
+  const futureActivities = prevActivities.filter(act => act.date >= cutOffDate);
+
+  // Past activities: protect completely, do NOT delete or insert cards
+  const updatedPastActivities = updateClientInfoInActivities(pastActivities, clients);
+
+  // Collect all target dates for future synchronization
+  const futureDates = new Set<string>(futureActivities.map(a => a.date));
+  if (cutOffDate) {
+    futureDates.add(cutOffDate);
   }
-  return updateClientInfoInActivities(prevActivities, clients);
+  for (const ed of ensureDates) {
+    if (ed && ed >= cutOffDate) {
+      futureDates.add(ed);
+    }
+  }
+
+  const updatedFutureActivities: DailyActivity[] = [];
+
+  for (const dateStr of Array.from(futureDates).sort()) {
+    const weekday = getWeekdayFromDateStr(dateStr);
+    const dateActs = futureActivities.filter(a => a.date === dateStr);
+
+    // If dateActs has no cards at all (e.g. newly accessed date), extract from scratch
+    if (dateActs.length === 0) {
+      if (settings) {
+        const extracted = extractDailyActivities(dateStr, clients, settings);
+        updatedFutureActivities.push(...extracted);
+      }
+      continue;
+    }
+
+    // Build the list of expected master services for this day of week
+    interface ExpectedService {
+      client: Client;
+      service: WeeklyService;
+      expectedId: string;
+    }
+    const expectedServices: ExpectedService[] = [];
+    for (const client of clients) {
+      for (const service of client.weeklyServices || []) {
+        if (service.dayOfWeek === weekday) {
+          expectedServices.push({
+            client,
+            service,
+            expectedId: `${client.id}-${service.id}-${dateStr}`
+          });
+        }
+      }
+    }
+
+    const expectedIdMap = new Map<string, ExpectedService>();
+    expectedServices.forEach(es => {
+      expectedIdMap.set(es.expectedId, es);
+    });
+
+    const newDateActs: DailyActivity[] = [];
+    const matchedExpectedIds = new Set<string>();
+
+    for (const act of dateActs) {
+      // Preserve break cards, report cards, and manual custom cards
+      if (
+        !act.clientId ||
+        act.id.startsWith("break-") ||
+        act.id.startsWith("rep-card-") ||
+        act.id.startsWith("custom-")
+      ) {
+        newDateActs.push(act);
+        continue;
+      }
+
+      // Check if client exists in master
+      const client = clientMap.get(act.clientId);
+      if (!client) {
+        // Client deleted from master -> Remove card!
+        continue;
+      }
+
+      // Check if service exists in master
+      let matched = expectedIdMap.get(act.id);
+
+      if (!matched) {
+        const candidate = expectedServices.find(es =>
+          es.client.id === act.clientId &&
+          !matchedExpectedIds.has(es.expectedId) &&
+          (
+            act.id.includes(`-${es.service.id}-`) ||
+            act.id.endsWith(`-${es.service.id}`) ||
+            (es.service.startTime === act.startTime && es.service.endTime === act.endTime)
+          )
+        );
+        if (candidate) {
+          matched = candidate;
+        }
+      }
+
+      if (!matched) {
+        // Service deleted from master -> Remove card!
+        continue;
+      }
+
+      // Matched: Mark as handled
+      matchedExpectedIds.add(matched.expectedId);
+
+      const shortName = client.nickname && client.nickname.trim() !== ""
+        ? client.nickname.trim()
+        : getShortenedClientName(client.kanjiName, clients);
+
+      const isMorning = parseTimeToMinutes(matched.service.startTime) >= parseTimeToMinutes("07:00") && 
+                        parseTimeToMinutes(matched.service.endTime) <= parseTimeToMinutes("10:00");
+
+      newDateActs.push({
+        ...act,
+        id: matched.expectedId,
+        clientId: client.id,
+        clientName: shortName,
+        roomNumber: client.roomNumber,
+        wing: getWingFromRoom(client.roomNumber),
+        startTime: matched.service.startTime,
+        endTime: matched.service.endTime,
+        route: act.route || matched.service.route || "A1",
+        serviceCode: getShortenedServiceCode(matched.service.serviceCode),
+        content: matched.service.memo,
+        isRule8RecordTarget: isMorning,
+        displayStartTime: act.displayStartTime || matched.service.displayStartTime,
+        displayEndTime: act.displayEndTime || matched.service.displayEndTime,
+      });
+    }
+
+    // Add newly added services from master
+    const resolvedRoutes = settings ? resolveHelperRoutesForDate(dateStr, settings) : [];
+    const activeRouteKeys = resolvedRoutes
+      .filter(rt => rt.name && rt.name !== "未割り当て" && rt.name !== "")
+      .map(rt => rt.key);
+
+    for (const es of expectedServices) {
+      if (!matchedExpectedIds.has(es.expectedId)) {
+        const shortName = es.client.nickname && es.client.nickname.trim() !== ""
+          ? es.client.nickname.trim()
+          : getShortenedClientName(es.client.kanjiName, clients);
+
+        const isMorning = parseTimeToMinutes(es.service.startTime) >= parseTimeToMinutes("07:00") && 
+                          parseTimeToMinutes(es.service.endTime) <= parseTimeToMinutes("10:00");
+
+        newDateActs.push({
+          id: es.expectedId,
+          date: dateStr,
+          clientId: es.client.id,
+          clientName: shortName,
+          roomNumber: es.client.roomNumber,
+          wing: getWingFromRoom(es.client.roomNumber),
+          startTime: es.service.startTime,
+          endTime: es.service.endTime,
+          route: es.service.route || (activeRouteKeys[0] || "A1"),
+          serviceCode: getShortenedServiceCode(es.service.serviceCode),
+          content: es.service.memo,
+          medicine: "none",
+          isChecked: false,
+          isRule8RecordTarget: isMorning,
+          displayStartTime: es.service.displayStartTime,
+          displayEndTime: es.service.displayEndTime
+        });
+      }
+    }
+
+    newDateActs.sort((a, b) => {
+      const sA = parseTimeToMinutes(a.startTime);
+      const sB = parseTimeToMinutes(b.startTime);
+      return sA - sB;
+    });
+
+    updatedFutureActivities.push(...newDateActs);
+  }
+
+  return [...updatedPastActivities, ...updatedFutureActivities];
 }
 
 // Maximum claims limits for each CareLevel (単位/月)
