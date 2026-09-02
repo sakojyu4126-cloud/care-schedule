@@ -229,21 +229,21 @@ export function resolveHelperRoutesForDate(
     let resolvedName = rt.name;
 
     if (rt.key === "A1") {
-      resolvedName = aHelpers[aIdx++] || "未割り当て";
+      resolvedName = aHelpers[aIdx++] || rt.name || "未割り当て";
     } else if (rt.key === "A2") {
-      resolvedName = aHelpers[aIdx++] || "未割り当て";
+      resolvedName = aHelpers[aIdx++] || rt.name || "未割り当て";
     } else if (rt.key === "A3") {
-      resolvedName = aHelpers[aIdx++] || "未割り当て";
+      resolvedName = aHelpers[aIdx++] || rt.name || "未割り当て";
     } else if (rt.key === "C1") {
-      resolvedName = cHelpers[cIdx++] || "未割り当て";
+      resolvedName = cHelpers[cIdx++] || rt.name || "未割り当て";
     } else if (rt.key === "C2") {
-      resolvedName = cHelpers[cIdx++] || "未割り当て";
+      resolvedName = cHelpers[cIdx++] || rt.name || "未割り当て";
     } else if (rt.key === "A4") {
-      resolvedName = aHelpers[aIdx++] || aSubHelpers[0] || "未割り当て";
+      resolvedName = aHelpers[aIdx++] || aSubHelpers[0] || rt.name || "未割り当て";
     } else if (rt.key === "B") {
-      resolvedName = bSubHelpers[0] || "未割り当て";
+      resolvedName = bSubHelpers[0] || rt.name || "未割り当て";
     } else if (rt.key === "C3") {
-      resolvedName = cHelpers[cIdx++] || dHelpers[0] || "未割り当て";
+      resolvedName = cHelpers[cIdx++] || dHelpers[0] || rt.name || "未割り当て";
     }
 
     const finalNorm = normalizeHelperName(resolvedName);
