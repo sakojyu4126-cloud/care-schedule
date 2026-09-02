@@ -8,7 +8,7 @@ import { DailyActivity, AppSettings, Client, ExtraordinaryReport, FreeSticker } 
 import { CheckCircle2, Circle, Search, Pill, MessageSquare, AlertCircle, Sparkles, Calendar, PlusCircle, History } from "lucide-react";
 import MobileReportForm from "./MobileReportForm";
 import { MedicineSticker } from "./DailyActivityTable";
-import { formatTimeHHMM, parseTimeToMinutes, extractDailyActivities, getWingFromRoom, mergeActivitiesWithReports, getShortenedServiceCode, normalizeHelperName, resolveHelperRoutesForDate } from "../utils/scheduler";
+import { formatTimeHHMM, parseTimeToMinutes, extractDailyActivities, getWingFromRoom, mergeActivitiesWithReports, getShortenedServiceCode, normalizeHelperName, resolveHelperRoutesForDate, isInvalidHelperName } from "../utils/scheduler";
 
 interface MobileHelperViewProps {
   activities: DailyActivity[];
@@ -286,7 +286,7 @@ export default function MobileHelperView({
     "All",
     ...(settings.helpersList || []).map(normalizeHelperName),
     ...resolvedHelperRoutes.map(r => normalizeHelperName(r.name))
-  ].filter(name => name && name !== "未割り当て" && name !== "")));
+  ].filter(name => name && name !== "未割り当て" && name !== "" && !isInvalidHelperName(name))));
 
   // Merge extraordinary reports into activities for mobile display
   const effectiveActivities = React.useMemo(() => {

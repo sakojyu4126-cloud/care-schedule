@@ -6,7 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { Client, DailyActivity, AppSettings, CareLevel, ExtraordinaryReport, FreeSticker } from "./types";
 import { INITIAL_CLIENTS, INITIAL_SETTINGS, INITIAL_EXTRAORDINARY_REPORTS } from "./utils/dummyData";
-import { extractDailyActivities, getTodayDateString, syncActivitiesWithClients, updateClientInfoInActivities } from "./utils/scheduler";
+import { extractDailyActivities, getTodayDateString, syncActivitiesWithClients, updateClientInfoInActivities, cleanSettings } from "./utils/scheduler";
 import DailyActivityTable from "./components/DailyActivityTable";
 import MobileHelperView from "./components/MobileHelperView";
 import ClientMasterTab from "./components/ClientMasterTab";
@@ -92,13 +92,20 @@ export default function App() {
           const orderMap: { [key: string]: number } = { A1: 1, A2: 2, A3: 3, A4: 4, B: 5, C1: 6, C2: 7, C3: 8 };
           parsed.helperRoutes.sort((a: any, b: any) => (orderMap[a.key] || 99) - (orderMap[b.key] || 99));
         }
-        return parsed;
+        return cleanSettings(parsed);
       } catch (e) {
-        return INITIAL_SETTINGS;
+        return cleanSettings(INITIAL_SETTINGS);
       }
     }
-    return INITIAL_SETTINGS;
+    return cleanSettings(INITIAL_SETTINGS);
   });
+
+  const handleUpdateSettings = (newSettings: AppSettings | ((prev: AppSettings) => AppSettings)) => {
+    setSettings(prev => {
+      const nextVal = typeof newSettings === "function" ? newSettings(prev) : newSettings;
+      return cleanSettings(nextVal);
+    });
+  };
 
   // 臨時対応報告データ（純粋な手動登録・保存データのみ管理）
   const [reports, setReports] = useState<ExtraordinaryReport[]>(() => {
@@ -174,7 +181,7 @@ export default function App() {
           isApplyingServerSync.current = true;
           if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
           if (Array.isArray(data.activities)) setActivities(data.activities);
-          if (data.settings && typeof data.settings === "object") setSettings(data.settings);
+          if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
           if (Array.isArray(data.reports)) setReports(data.reports);
           if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
           
@@ -264,7 +271,7 @@ export default function App() {
     isApplyingServerSync.current = true;
     if (pendingServerData.clients) setClients(pendingServerData.clients);
     if (pendingServerData.activities) setActivities(pendingServerData.activities);
-    if (pendingServerData.settings) setSettings(pendingServerData.settings);
+    if (pendingServerData.settings) handleUpdateSettings(pendingServerData.settings);
     if (pendingServerData.reports) setReports(pendingServerData.reports);
     if (pendingServerData.freeStickers) setFreeStickers(pendingServerData.freeStickers);
     
@@ -759,7 +766,7 @@ export default function App() {
                   clients={clients}
                   clientsCount={clients.length}
                   onUpdateActivities={setActivities}
-                  onUpdateSettings={setSettings}
+                  onUpdateSettings={handleUpdateSettings}
                   isLocked={false}
                   externalAddTrigger={externalAddTrigger}
                   selectedDate={selectedDate}
@@ -788,14 +795,14 @@ export default function App() {
                 onUpdateClients={handleUpdateClients}
                 isLocked={isAdminLocked}
                 settings={settings}
-                onUpdateSettings={setSettings}
+                onUpdateSettings={handleUpdateSettings}
               />
             )}
 
             {activeTab === "settings" && (
               <SettingsTab
                 settings={settings}
-                onUpdateSettings={setSettings}
+                onUpdateSettings={handleUpdateSettings}
                 clients={clients}
                 onUpdateClients={handleUpdateClients}
                 isLocked={isAdminLocked}

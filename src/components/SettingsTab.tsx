@@ -8,7 +8,7 @@ import { AppSettings, Client, CareLevel, HelperShiftRow, HelperMonthShift } from
 import { Lock, Unlock, Database, Sparkles, RefreshCw, AlertCircle, CheckCircle2, ShieldAlert, FileSpreadsheet, Trash2, Eye, EyeOff, Users, Plus, X, Upload, FileUp, Download, FileCode, FolderArchive } from "lucide-react";
 import { motion } from "motion/react";
 import { INITIAL_CLIENTS } from "../utils/dummyData";
-import { normalizeHelperName } from "../utils/scheduler";
+import { normalizeHelperName, isInvalidHelperName, cleanSettings } from "../utils/scheduler";
 import * as XLSX from "xlsx";
 
 interface SettingsTabProps {
@@ -189,17 +189,17 @@ export default function SettingsTab({
     const lines = bulkHelperText.split(/\r?\n|[,，、]+/);
     const newNames = lines
       .map(name => normalizeHelperName(name.trim()))
-      .filter(name => name.length > 0 && name !== "未割り当て");
+      .filter(name => name.length > 0 && !isInvalidHelperName(name) && name !== "未割り当て");
 
     if (newNames.length === 0) {
       setHelperRegMsg("エラー：有効なヘルパー名が入力されていません。");
       return;
     }
 
-    onUpdateSettings({
+    onUpdateSettings(cleanSettings({
       ...settings,
       helpersList: newNames
-    });
+    }));
     setHelperRegMsg(`ヘルパー一覧を更新しました（全 ${newNames.length} 名）`);
     setTimeout(() => setHelperRegMsg(""), 3000);
   };
@@ -291,21 +291,26 @@ export default function SettingsTab({
       const cols = line.split("\t").map(s => s.trim());
       if (cols.length < 5) continue; // Skip very short lines
       
-      const name = cols[0];
-      if (!name) continue;
+      const rawName = cols[0];
+      if (!rawName) continue;
       
-      // Ignore headers
+      // Ignore invalid helper names or headers (like R, R）, （R）, 氏名, 年, 月分, etc.)
       if (
-        name === "氏名" || 
-        name === "氏名" ||
-        name.match(/^[0-9]+$/) || 
-        ["水","木","金","土","日","月","火"].includes(name) || 
-        name.includes("R8") || 
-        name.includes("年") || 
-        name.includes("月分") ||
-        name.includes("事業所") ||
-        name.includes("サービス")
+        isInvalidHelperName(rawName) ||
+        rawName === "氏名" || 
+        rawName.match(/^[0-9]+$/) || 
+        ["水","木","金","土","日","月","火"].includes(rawName) || 
+        rawName.includes("R8") || 
+        rawName.includes("年") || 
+        rawName.includes("月分") ||
+        rawName.includes("事業所") ||
+        rawName.includes("サービス")
       ) {
+        continue;
+      }
+
+      const normalizedName = normalizeHelperName(rawName);
+      if (isInvalidHelperName(normalizedName) || normalizedName === "未割り当て") {
         continue;
       }
       
@@ -319,7 +324,7 @@ export default function SettingsTab({
       }
       
       rows.push({
-        helperName: normalizeHelperName(name),
+        helperName: normalizedName,
         shifts
       });
     }
@@ -342,15 +347,15 @@ export default function SettingsTab({
     const updatedMonthShifts = [...filtered, newMonthShift];
     
     // Auto-update helpersList with any new helper names found
-    const currentHelpers = settings.helpersList || defaultHelpers;
-    const foundNames = rows.map(r => r.helperName);
+    const currentHelpers = (settings.helpersList || defaultHelpers).filter(h => !isInvalidHelperName(h));
+    const foundNames = rows.map(r => r.helperName).filter(h => !isInvalidHelperName(h));
     const newHelpersList = Array.from(new Set([...currentHelpers, ...foundNames]));
     
-    onUpdateSettings({
+    onUpdateSettings(cleanSettings({
       ...settings,
       helperMonthShifts: updatedMonthShifts,
       helpersList: newHelpersList
-    });
+    }));
     
     setPastedShiftText("");
     setShiftMsg(`成功：${targetMonthStr}のシフト表（${rows.length}名分）を登録しました！`);

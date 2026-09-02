@@ -49,11 +49,31 @@ export function formatTimeHHMM(timeStr: string): string {
   return `${h}:${m}`;
 }
 
+// Check if a name is invalid, empty, or a role/dummy indicator like "R", "R）", "(R)", "リーダー"
+export function isInvalidHelperName(name?: string | null): boolean {
+  if (!name) return true;
+  const s = String(name).trim();
+  if (!s || s === "-" || s === "未割り当て" || s === "未設定" || s === "未定") return true;
+
+  // Single letter/symbol roles or prefixes (e.g. "R", "R）", "R)", "(R)", "（R）", "Ｒ）", "A", "B", "C", "D")
+  if (/^[（\(]?[RＲrｒ][）\)]?$/i.test(s)) return true;
+  if (/^[RＲrｒ][）\)]/i.test(s) && s.length <= 3) return true;
+  if (/^[（\(]?[A-Za-zＡ-Ｚａ-ｚ0-9０-９][）\)]?$/.test(s)) return true;
+  if (/^[（\(]?(?:リーダー|サ責|フリー|管理者|責任者|役職|氏名|担当|日付|曜日)[）\)]?$/.test(s)) return true;
+
+  return false;
+}
+
 // Normalize helper names consistently across all views and settings
 export function normalizeHelperName(name?: string | null): string {
   if (!name) return "未割り当て";
   let s = String(name).trim();
-  if (!s || s === "-" || s === "未割り当て" || s === "未設定") return "未割り当て";
+  if (isInvalidHelperName(s)) return "未割り当て";
+
+  // Strip leading role tags like "R）水田", "(R) 安田", "（R）吉田"
+  s = s.replace(/^[（\(]?[RＲrｒ][）\)]?\s*/i, "").trim();
+  s = s.replace(/^[（\(]?(?:リーダー|サ責|フリー)[）\)]?\s*/i, "").trim();
+  if (!s || isInvalidHelperName(s)) return "未割り当て";
 
   // Standardize full-width vs half-width katakana
   s = s.replace(/ｼﾞ/g, "ジ")
@@ -70,6 +90,73 @@ export function normalizeHelperName(name?: string | null): string {
   return s;
 }
 
+/**
+ * Permanently purges and cleans any invalid helper records (like "R）", "(R)", non-names)
+ * from settings, month shifts, default routes, date overrides, and helper lists.
+ */
+export function cleanSettings(settings: AppSettings): AppSettings {
+  if (!settings) return settings;
+
+  // 1. Clean helpersList
+  const rawList = settings.helpersList || [];
+  const cleanedList = rawList
+    .map(name => normalizeHelperName(name))
+    .filter(name => !isInvalidHelperName(name) && name !== "未割り当て");
+  const uniqueHelpers = Array.from(new Set(cleanedList));
+
+  // 2. Clean helperRoutes default
+  const cleanedHelperRoutes = (settings.helperRoutes || []).map(r => {
+    const norm = normalizeHelperName(r.name);
+    return {
+      ...r,
+      name: isInvalidHelperName(norm) ? "未割り当て" : norm
+    };
+  });
+
+  // 3. Clean helperMonthShifts
+  const cleanedMonthShifts = (settings.helperMonthShifts || []).map(ms => {
+    const cleanedRows = (ms.rows || [])
+      .filter(row => {
+        if (!row.helperName) return false;
+        if (isInvalidHelperName(row.helperName)) return false;
+        const norm = normalizeHelperName(row.helperName);
+        return !isInvalidHelperName(norm) && norm !== "未割り当て";
+      })
+      .map(row => ({
+        ...row,
+        helperName: normalizeHelperName(row.helperName)
+      }));
+    return {
+      ...ms,
+      rows: cleanedRows
+    };
+  });
+
+  // 4. Clean dateHelperRoutes overrides
+  let cleanedDateHelperRoutes = settings.dateHelperRoutes;
+  if (cleanedDateHelperRoutes) {
+    const newOverrides: { [dateStr: string]: { key: string; name: string }[] } = {};
+    for (const [dateStr, routes] of Object.entries(cleanedDateHelperRoutes)) {
+      newOverrides[dateStr] = routes.map(r => {
+        const norm = normalizeHelperName(r.name);
+        return {
+          ...r,
+          name: isInvalidHelperName(norm) ? "未割り当て" : norm
+        };
+      });
+    }
+    cleanedDateHelperRoutes = newOverrides;
+  }
+
+  return {
+    ...settings,
+    helpersList: uniqueHelpers,
+    helperRoutes: cleanedHelperRoutes,
+    helperMonthShifts: cleanedMonthShifts,
+    dateHelperRoutes: cleanedDateHelperRoutes
+  };
+}
+
 // Calculate the exact helper assignment for each route on a given date based on shift schedule (helperMonthShifts) or overrides
 export function resolveHelperRoutesForDate(
   dateStr: string,
@@ -77,7 +164,10 @@ export function resolveHelperRoutesForDate(
 ): { key: string; name: string }[] {
   const dateOverrides = settings.dateHelperRoutes?.[dateStr];
   if (dateOverrides && dateOverrides.length > 0) {
-    return dateOverrides.map(r => ({ ...r, name: normalizeHelperName(r.name) }));
+    return dateOverrides.map(r => {
+      const norm = normalizeHelperName(r.name);
+      return { ...r, name: isInvalidHelperName(norm) ? "未割り当て" : norm };
+    });
   }
 
   const defaultRoutes = (settings.helperRoutes && settings.helperRoutes.length > 0)
@@ -94,7 +184,10 @@ export function resolveHelperRoutesForDate(
       ];
 
   const parts = dateStr.split("-");
-  if (parts.length < 3) return defaultRoutes.map(r => ({ ...r, name: normalizeHelperName(r.name) }));
+  if (parts.length < 3) return defaultRoutes.map(r => {
+    const norm = normalizeHelperName(r.name);
+    return { ...r, name: isInvalidHelperName(norm) ? "未割り当て" : norm };
+  });
   const year = Number(parts[0]);
   const month = Number(parts[1]);
   const day = Number(parts[2]);
@@ -102,7 +195,10 @@ export function resolveHelperRoutesForDate(
 
   const monthShift = settings.helperMonthShifts?.find(m => m.month === monthKey);
   if (!monthShift) {
-    return defaultRoutes.map(r => ({ ...r, name: normalizeHelperName(r.name) }));
+    return defaultRoutes.map(r => {
+      const norm = normalizeHelperName(r.name);
+      return { ...r, name: isInvalidHelperName(norm) ? "未割り当て" : norm };
+    });
   }
 
   const dayIndex = day - 1; // 0..30
@@ -114,8 +210,11 @@ export function resolveHelperRoutesForDate(
   const dHelpers: string[] = [];
 
   for (const row of monthShift.rows) {
-    const code = (row.shifts[dayIndex] || "").trim();
+    if (!row.helperName || isInvalidHelperName(row.helperName)) continue;
     const norm = normalizeHelperName(row.helperName);
+    if (!norm || isInvalidHelperName(norm) || norm === "未割り当て") continue;
+
+    const code = (row.shifts[dayIndex] || "").trim();
     if (code === "A") aHelpers.push(norm);
     else if (code === "C") cHelpers.push(norm);
     else if (code === "a") aSubHelpers.push(norm);
@@ -147,9 +246,10 @@ export function resolveHelperRoutesForDate(
       resolvedName = cHelpers[cIdx++] || dHelpers[0] || "未割り当て";
     }
 
+    const finalNorm = normalizeHelperName(resolvedName);
     return {
       ...rt,
-      name: normalizeHelperName(resolvedName)
+      name: isInvalidHelperName(finalNorm) ? "未割り当て" : finalNorm
     };
   });
 }

@@ -7,7 +7,7 @@ import React, { useState } from "react";
 import { DailyActivity, AppSettings, MedicineState, Client, FreeSticker, ExtraordinaryReport } from "../types";
 import { Plus, Edit2, Trash2, Eye, EyeOff, Pill, Users, Calendar, Check, Clock, Megaphone, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { parseTimeToMinutes, formatTimeHHMM, getShortenedServiceCode, getTodayDateString, getWingFromRoom, mergeActivitiesWithReports, parseTimeRangeString, formatTimeRange2Digits, normalizeHelperName, resolveHelperRoutesForDate } from "../utils/scheduler";
+import { parseTimeToMinutes, formatTimeHHMM, getShortenedServiceCode, getTodayDateString, getWingFromRoom, mergeActivitiesWithReports, parseTimeRangeString, formatTimeRange2Digits, normalizeHelperName, resolveHelperRoutesForDate, isInvalidHelperName } from "../utils/scheduler";
 
 interface DailyActivityTableProps {
   activities: DailyActivity[];
@@ -634,12 +634,16 @@ export default function DailyActivityTable({
     const offDuty: HelperStatus[] = [];
 
     for (const row of monthShift.rows) {
+      if (!row.helperName || isInvalidHelperName(row.helperName)) continue;
+      const norm = normalizeHelperName(row.helperName);
+      if (!norm || isInvalidHelperName(norm) || norm === "未割り当て") continue;
+
       const code = (row.shifts[dayIndex] || "").trim();
       const isOff = code === "/" || code === "×" || code === "" || code === "公" || code === "休";
       if (isOff) {
-        offDuty.push({ name: row.helperName, code: code || "休" });
+        offDuty.push({ name: norm, code: code || "休" });
       } else {
-        onDuty.push({ name: row.helperName, code });
+        onDuty.push({ name: norm, code });
       }
     }
 
@@ -758,7 +762,7 @@ export default function DailyActivityTable({
     if (settings.helpersList && settings.helpersList.length > 0) {
       settings.helpersList.forEach(h => {
         const n = normalizeHelperName(h);
-        if (n && n !== "未割り当て") list.add(n);
+        if (n && n !== "未割り当て" && !isInvalidHelperName(n)) list.add(n);
       });
     } else {
       // Fallback default list
@@ -776,14 +780,14 @@ export default function DailyActivityTable({
         "山田 花子"
       ].forEach(h => {
         const n = normalizeHelperName(h);
-        if (n && n !== "未割り当て") list.add(n);
+        if (n && n !== "未割り当て" && !isInvalidHelperName(n)) list.add(n);
       });
     }
 
     // 2. Also ensure any currently selected route helper is present in dropdown
     filteredRoutes.forEach(r => {
       const n = normalizeHelperName(r.name);
-      if (n && n !== "未割り当て") list.add(n);
+      if (n && n !== "未割り当て" && !isInvalidHelperName(n)) list.add(n);
     });
 
     return Array.from(list).sort();

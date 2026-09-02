@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from "react";
 import { Client, ExtraordinaryReport, AppSettings } from "../types";
 import { CheckCircle2, Clock, User, Sparkles, FileText, RotateCcw, Send } from "lucide-react";
+import { normalizeHelperName, isInvalidHelperName } from "../utils/scheduler";
 
 interface MobileReportFormProps {
   clients: Client[];
@@ -76,7 +77,13 @@ export default function MobileReportForm({
   const helperOptions = React.useMemo(() => {
     const list = settings.helpersList || [];
     const routeHelpers = settings.helperRoutes ? settings.helperRoutes.map(r => r.name) : [];
-    const combined = Array.from(new Set([...list, ...routeHelpers].filter(Boolean)));
+    const combined = Array.from(
+      new Set(
+        [...list, ...routeHelpers]
+          .map(normalizeHelperName)
+          .filter(h => h && h !== "未割り当て" && !isInvalidHelperName(h))
+      )
+    );
     return combined;
   }, [settings]);
 
