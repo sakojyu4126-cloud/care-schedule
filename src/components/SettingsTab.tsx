@@ -161,17 +161,9 @@ export default function SettingsTab({
   };
 
   // Helper registration local states
-  const defaultHelpers = [
-    "水田 祐里子",
-    "齋藤 公明",
-    "安田 真弓",
-    "吉田 J",
-    "西條 廣一",
-    "鈴木 敏夫",
-    "山田 花子"
-  ];
+  const defaultHelpers: string[] = [];
 
-  const currentHelpers = settings.helpersList || defaultHelpers;
+  const currentHelpers = (settings.helpersList && settings.helpersList.length > 0) ? settings.helpersList : defaultHelpers;
 
   const [bulkHelperText, setBulkHelperText] = useState(() => {
     return currentHelpers.join("\n");
@@ -346,10 +338,11 @@ export default function SettingsTab({
     
     const updatedMonthShifts = [...filtered, newMonthShift];
     
-    // Auto-update helpersList with any new helper names found
-    const currentHelpers = (settings.helpersList || defaultHelpers).filter(h => !isInvalidHelperName(h));
-    const foundNames = rows.map(r => r.helperName).filter(h => !isInvalidHelperName(h));
-    const newHelpersList = Array.from(new Set([...currentHelpers, ...foundNames]));
+    // Keep user's configured helpersList intact if present, or initialize from found names
+    const currentHelpers = (settings.helpersList && settings.helpersList.length > 0)
+      ? settings.helpersList.filter(h => !isInvalidHelperName(h))
+      : rows.map(r => r.helperName).filter(h => !isInvalidHelperName(h));
+    const newHelpersList = Array.from(new Set(currentHelpers));
     
     onUpdateSettings(cleanSettings({
       ...settings,

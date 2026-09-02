@@ -34,11 +34,7 @@ import {
   Upload,
   Database,
   FileCode,
-  FileJson,
-  QrCode,
-  X,
-  Copy,
-  Check
+  FileJson
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -175,8 +171,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"activities" | "clients" | "settings" | "reports">("activities");
   const [isAdminLocked, setIsAdminLocked] = useState(true);
   const [externalAddTrigger, setExternalAddTrigger] = useState(0);
-  const [showQrModal, setShowQrModal] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
 
   // 1.5. Server Synchronization State
   const [clientId] = useState(() => {
@@ -547,14 +541,6 @@ export default function App() {
             {!isMobileMode && (
               <>
                 <button
-                  onClick={() => setShowQrModal(true)}
-                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 transition-all cursor-pointer shadow-3xs"
-                  title="スマホで単独全画面表示するためのQRコードと直接URLを表示します"
-                >
-                  <QrCode className="w-3.5 h-3.5 text-blue-600" />
-                  <span>スマホ用QR</span>
-                </button>
-                <button
                   onClick={() => window.location.href = "/api/export-zip"}
                   className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 transition-all cursor-pointer shadow-3xs"
                   title="全ソースコードをZIP形式でダウンロードします"
@@ -880,102 +866,6 @@ export default function App() {
       <footer className="text-center py-8 text-[11px] text-slate-400 border-t border-slate-200 mt-12">
         <p>© 介護活動・予定表連動システム - デイサービス & ヘルパーステーション連携</p>
       </footer>
-
-      {/* Standalone Direct Mobile App QR Modal */}
-      {showQrModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
-                  <QrCode className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-black text-slate-900 text-sm">スマホ用 リアルタイム同期QRコード</h3>
-                  <p className="text-[11px] text-slate-500 font-medium">PCの最新データと完全連動</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowQrModal(false)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Crucial Note about old Vercel URL */}
-            <div className="bg-red-50 border border-red-200/80 rounded-2xl p-3 text-[11px] text-red-950 space-y-1">
-              <p className="font-black text-red-700 flex items-center gap-1">
-                <span>⚠️</span> 過去のURL（...vercel.app 等）にご注意ください
-              </p>
-              <p className="text-red-900 leading-relaxed font-medium">
-                スマホで以前の古いVercelブックマークを開いていると、PCの最新データが反映されません。<strong>必ず下記のQRコードをスマホのカメラでスキャン</strong>して開いてください。
-              </p>
-            </div>
-
-            <div className="flex flex-col items-center justify-center py-2 space-y-2">
-              <div className="p-3 bg-white border-2 border-blue-200 rounded-2xl shadow-inner">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
-                    typeof window !== "undefined" ? `${window.location.origin}?view=mobile` : ""
-                  )}`}
-                  alt="スマホ用QRコード"
-                  className="w-48 h-48 rounded-lg"
-                />
-              </div>
-              <p className="text-xs font-black text-slate-800 text-center">
-                スマホのカメラでスキャンして開く
-              </p>
-            </div>
-
-            {/* Direct URL Box */}
-            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 space-y-2">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">直接アクセスURL</span>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  readOnly
-                  value={typeof window !== "undefined" ? `${window.location.origin}?view=mobile` : ""}
-                  className="flex-1 text-xs bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-mono truncate select-all"
-                />
-                <button
-                  onClick={() => {
-                    if (typeof window !== "undefined") {
-                      navigator.clipboard.writeText(`${window.location.origin}?view=mobile`);
-                      setCopiedUrl(true);
-                      setTimeout(() => setCopiedUrl(false), 2000);
-                    }
-                  }}
-                  className={`flex items-center gap-1 text-xs font-black px-3 py-2 rounded-xl transition-all cursor-pointer shrink-0 ${
-                    copiedUrl
-                      ? "bg-emerald-600 text-white"
-                      : "bg-slate-800 hover:bg-slate-900 text-white"
-                  }`}
-                >
-                  {copiedUrl ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                  <span>{copiedUrl ? "コピー済" : "コピー"}</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-3 text-[11px] text-blue-950 space-y-1">
-              <p className="font-bold">💡 アプリのように全画面で使う方法：</p>
-              <p className="text-blue-900 leading-relaxed font-medium">
-                QRコードで開いた後、スマホブラウザ（SafariやChrome）のメニューから<strong>「ホーム画面に追加」</strong>すると、以降は通常のアプリのようにワンタップで最新の支援割振りを確認できます。
-              </p>
-            </div>
-
-            <div className="pt-1">
-              <button
-                onClick={() => setShowQrModal(false)}
-                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

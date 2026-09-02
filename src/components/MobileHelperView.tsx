@@ -280,12 +280,13 @@ export default function MobileHelperView({
     return routeObj ? routeObj.name : "未割り当て";
   };
 
-  // Compile list of unique active caregiver names on this day plus other registered names
-  const helperNamesList = Array.from(new Set([
-    "All",
-    ...(settings.helpersList || []).map(normalizeHelperName),
-    ...resolvedHelperRoutes.map(r => normalizeHelperName(r.name))
-  ].filter(name => name && name !== "未割り当て" && name !== "" && !isInvalidHelperName(name))));
+  // Compile list of unique active caregiver names strictly from settings.helpersList
+  const helperNamesList = React.useMemo(() => {
+    const list = (settings.helpersList || [])
+      .map(normalizeHelperName)
+      .filter(name => name && name !== "未割り当て" && name !== "未割当" && name !== "" && !isInvalidHelperName(name));
+    return ["All", ...Array.from(new Set(list)).sort()];
+  }, [settings.helpersList]);
 
   // On mobile view, keep schedule clean by displaying only the regular activity schedule (temporary reports are logged via the report form and viewed on PC)
   const effectiveActivities = React.useMemo(() => {

@@ -73,19 +73,13 @@ export default function MobileReportForm({
     }
   }, [selectedDate]);
 
-  // Extract helper list
+  // Extract helper list strictly from settings.helpersList
   const helperOptions = React.useMemo(() => {
-    const list = settings.helpersList || [];
-    const routeHelpers = settings.helperRoutes ? settings.helperRoutes.map(r => r.name) : [];
-    const combined = Array.from(
-      new Set(
-        [...list, ...routeHelpers]
-          .map(normalizeHelperName)
-          .filter(h => h && h !== "未割り当て" && !isInvalidHelperName(h))
-      )
-    );
-    return combined;
-  }, [settings]);
+    const list = (settings.helpersList || [])
+      .map(normalizeHelperName)
+      .filter(h => h && h !== "未割り当て" && h !== "未割当" && !isInvalidHelperName(h));
+    return Array.from(new Set(list)).sort();
+  }, [settings.helpersList]);
 
   // Filter clients for autocomplete
   const filteredClients = clients.filter(c =>

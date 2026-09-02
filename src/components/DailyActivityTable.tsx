@@ -733,13 +733,13 @@ export default function DailyActivityTable({
     ]);
 
     const defaultRoutes = [
-      { key: "A1", name: "水田 祐里子" },
-      { key: "A2", name: "齋藤 公明" },
-      { key: "A3", name: "安田 真弓" },
+      { key: "A1", name: "未割り当て" },
+      { key: "A2", name: "未割り当て" },
+      { key: "A3", name: "未割り当て" },
       { key: "A4", name: "未割り当て" },
       { key: "B", name: "未割り当て" },
-      { key: "C1", name: "吉田 J" },
-      { key: "C2", name: "西條 廣一" },
+      { key: "C1", name: "未割り当て" },
+      { key: "C2", name: "未割り当て" },
       { key: "C3", name: "未割り当て" }
     ];
 
@@ -761,40 +761,16 @@ export default function DailyActivityTable({
   const helperOptions = React.useMemo(() => {
     const list = new Set<string>();
     
-    // 1. Primary source: explicitly registered helpers in settings.helpersList
+    // Primary source: explicitly registered helpers in settings.helpersList
     if (settings.helpersList && settings.helpersList.length > 0) {
       settings.helpersList.forEach(h => {
         const n = normalizeHelperName(h);
-        if (n && n !== "未割り当て" && !isInvalidHelperName(n)) list.add(n);
-      });
-    } else {
-      // Fallback default list
-      [
-        "水田 祐里子",
-        "齋藤 公明",
-        "安田 真弓",
-        "吉田 ジャッキー",
-        "西條 廣一",
-        "長島 睦枝",
-        "豊川 英子",
-        "松井 真実",
-        "藤吉 俊之",
-        "鈴木 敏夫",
-        "山田 花子"
-      ].forEach(h => {
-        const n = normalizeHelperName(h);
-        if (n && n !== "未割り当て" && !isInvalidHelperName(n)) list.add(n);
+        if (n && n !== "未割り当て" && n !== "未割当" && !isInvalidHelperName(n)) list.add(n);
       });
     }
 
-    // 2. Also ensure any currently selected route helper is present in dropdown
-    filteredRoutes.forEach(r => {
-      const n = normalizeHelperName(r.name);
-      if (n && n !== "未割り当て" && !isInvalidHelperName(n)) list.add(n);
-    });
-
     return Array.from(list).sort();
-  }, [settings.helpersList, filteredRoutes]);
+  }, [settings.helpersList]);
 
   const effectiveDateActivities = React.useMemo(() => {
     return mergeActivitiesWithReports(activities, reports, currentDateStr, settings, clients || []);
