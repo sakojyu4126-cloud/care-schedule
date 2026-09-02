@@ -296,7 +296,7 @@ export default function MobileHelperView({
   // Filter activities based on selected helper name, selected date & search query with break deduplication
   const filteredActivities = React.useMemo(() => {
     const raw = effectiveActivities.filter((act) => {
-      if (act.date !== selectedDate) return false;
+      if (act.date !== selectedDate && normalizeDateStr(act.date) !== normalizeDateStr(selectedDate)) return false;
 
       let helperMatch = selectedHelper === "All";
       if (!helperMatch) {
@@ -483,7 +483,7 @@ export default function MobileHelperView({
     }
 
     const baseList = effectiveActivities.filter(act => {
-      return act.date === selectedDate && act.helperInstruction && act.helperInstruction.trim() !== "";
+      return (act.date === selectedDate || normalizeDateStr(act.date) === normalizeDateStr(selectedDate)) && act.helperInstruction && act.helperInstruction.trim() !== "";
     });
 
     return baseList.filter(act => {
@@ -1285,7 +1285,7 @@ export default function MobileHelperView({
             const endMin = parseTimeToMinutes(effEnd);
             
             const overlappingStickers = freeStickers.filter(s => {
-              if (s.route !== act.route || s.date !== selectedDate) return false;
+              if (s.route !== act.route || (s.date !== selectedDate && normalizeDateStr(s.date) !== normalizeDateStr(selectedDate))) return false;
               // sticker.y is in PC pixels where 1 min = 1.5px
               const stickerMin = s.y / 1.5;
               return stickerMin >= startMin && stickerMin <= endMin;

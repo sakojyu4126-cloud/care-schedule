@@ -80,10 +80,46 @@ function loadInitialMasterFallback(): SyncData {
   }
 }
 
+// Helper to sanitize settings and remove retired helpers
+function sanitizeSettings(settings: any): any {
+  if (!settings || typeof settings !== "object") return settings;
+  const retiredNames = new Set(["齋藤公明", "斎藤公明"]);
+  
+  const helpersList = Array.isArray(settings.helpersList)
+    ? settings.helpersList.filter((h: string) => h && !retiredNames.has(h.trim()))
+    : settings.helpersList;
+
+  const helperRoutes = Array.isArray(settings.helperRoutes)
+    ? settings.helperRoutes.map((r: any) => ({
+        ...r,
+        name: r.name && retiredNames.has(r.name.trim()) ? "未割り当て" : r.name
+      }))
+    : settings.helperRoutes;
+
+  const helperMonthShifts = Array.isArray(settings.helperMonthShifts)
+    ? settings.helperMonthShifts.map((ms: any) => ({
+        ...ms,
+        rows: Array.isArray(ms.rows)
+          ? ms.rows.filter((r: any) => r.helperName && !retiredNames.has(r.helperName.trim()))
+          : ms.rows
+      }))
+    : settings.helperMonthShifts;
+
+  return {
+    ...settings,
+    helpersList,
+    helperRoutes,
+    helperMonthShifts
+  };
+}
+
 try {
   if (fs.existsSync(DATA_STORE_PATH)) {
     const raw = fs.readFileSync(DATA_STORE_PATH, "utf-8");
     serverState = JSON.parse(raw);
+    if (serverState.settings) {
+      serverState.settings = sanitizeSettings(serverState.settings);
+    }
     if (!serverState.clients || serverState.clients.length === 0 || !serverState.settings) {
       console.log("data_store.json was incomplete. Seeding from master initial datasets...");
       const fallback = loadInitialMasterFallback();
@@ -92,17 +128,18 @@ try {
         ...serverState,
         clients: serverState.clients && serverState.clients.length > 0 ? serverState.clients : fallback.clients,
         activities: serverState.activities && serverState.activities.length > 0 ? serverState.activities : fallback.activities,
-        settings: serverState.settings ? serverState.settings : fallback.settings,
+        settings: sanitizeSettings(serverState.settings ? serverState.settings : fallback.settings),
         hasData: true,
         updatedAt: serverState.updatedAt || Date.now()
       };
-      fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
     }
+    fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
     console.log("Loaded existing data_store.json with updatedAt:", serverState.updatedAt, "by:", serverState.lastUpdatedBy);
   } else {
     console.log("No data_store.json found. Seeding from master initial datasets...");
     serverState = loadInitialMasterFallback();
     if (serverState.hasData) {
+      serverState.settings = sanitizeSettings(serverState.settings);
       fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
     }
   }
@@ -119,6 +156,10 @@ app.get("/api/sync", (req, res) => {
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
 
+  if (serverState.settings) {
+    serverState.settings = sanitizeSettings(serverState.settings);
+  }
+
   res.json({
     success: true,
     hasData: serverState.hasData,
@@ -134,8 +175,7 @@ app.get("/api/sync", (req, res) => {
 
 app.post("/api/sync", (req, res) => {
   try {
-    const { clients, activities, settings, reports, freeStickers, updatedAt, lastUpdatedBy } = req.body;
-    const clientTimestamp = Number(updatedAt) || 0;
+    const { clients, activities, settings, reports, freeStickers, lastUpdatedBy } = req.body;
 
     // Safety check: Do not allow replacing production 50+ clients with legacy small/mock clients list
     if (Array.isArray(clients) && clients.length < 50 && serverState.clients && serverState.clients.length >= 50) {
@@ -148,24 +188,23 @@ app.post("/api/sync", (req, res) => {
       });
     }
 
-    // Only update if server has no data, or if the client sending has a newer version,
-    // or if the client explicitly pushes an update (clientTimestamp === 0 / force override)
-    if (!serverState.hasData || clientTimestamp > serverState.updatedAt || clientTimestamp === 0) {
-      serverState = {
-        hasData: true,
-        clients: Array.isArray(clients) && clients.length > 0 ? clients : serverState.clients,
-        activities: Array.isArray(activities) && activities.length > 0 ? activities : serverState.activities,
-        settings: settings || serverState.settings,
-        reports: Array.isArray(reports) ? reports : serverState.reports,
-        freeStickers: Array.isArray(freeStickers) ? freeStickers : serverState.freeStickers,
-        updatedAt: Date.now(),
-        lastUpdatedBy: lastUpdatedBy || ""
-      };
+    const cleanedSettings = sanitizeSettings(settings || serverState.settings);
 
-      fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
-      console.log("Saved new serverState. updatedAt:", serverState.updatedAt, "by:", serverState.lastUpdatedBy);
-    }
+    serverState = {
+      hasData: true,
+      clients: Array.isArray(clients) && clients.length > 0 ? clients : serverState.clients,
+      activities: Array.isArray(activities) ? activities : serverState.activities,
+      settings: cleanedSettings,
+      reports: Array.isArray(reports) ? reports : serverState.reports,
+      freeStickers: Array.isArray(freeStickers) ? freeStickers : serverState.freeStickers,
+      updatedAt: Date.now(),
+      lastUpdatedBy: lastUpdatedBy || "client_update"
+    };
 
+    fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
+    console.log("Saved new serverState. updatedAt:", serverState.updatedAt, "by:", serverState.lastUpdatedBy, "activities:", serverState.activities.length);
+
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     res.json({
       success: true,
       hasData: serverState.hasData,

@@ -34,8 +34,14 @@ import {
   Upload,
   Database,
   FileCode,
-  FileJson
+  FileJson,
+  QrCode,
+  Copy,
+  Check,
+  ExternalLink,
+  X
 } from "lucide-react";
+import { QRCodeSVG } from "qrcode.react";
 import { motion, AnimatePresence } from "motion/react";
 
 // Helper to perform one-time data migration from legacy mock cache to production master data
@@ -184,6 +190,8 @@ export default function App() {
 
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error" | "offline">("synced");
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
   const isApplyingServerSync = React.useRef(false);
   const isInitialSyncDone = React.useRef(false);
 
@@ -507,7 +515,6 @@ export default function App() {
   useEffect(() => {
     if (!isInitialSyncDone.current) return;
     if (isApplyingServerSync.current) return;
-    if (localStorage.getItem("has_user_data") !== "true") return;
 
     const pushData = async () => {
       try {
@@ -539,7 +546,7 @@ export default function App() {
       }
     };
 
-    const timer = setTimeout(pushData, 500);
+    const timer = setTimeout(pushData, 400);
     return () => clearTimeout(timer);
   }, [clients, activities, settings, reports, freeStickers, clientId]);
 
@@ -592,6 +599,14 @@ export default function App() {
             {/* Management buttons: Only display on PC management screen, hidden on mobile */}
             {!isMobileMode && (
               <>
+                <button
+                  onClick={() => setShowQrModal(true)}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200/80 transition-all cursor-pointer shadow-3xs"
+                  title="スマートフォンで開くためのQRコードを表示します"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-pink-600" />
+                  <span>QR連携</span>
+                </button>
                 <button
                   onClick={() => window.location.href = "/api/export-zip"}
                   className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 transition-all cursor-pointer shadow-3xs"
@@ -897,6 +912,111 @@ export default function App() {
       <footer className="text-center py-8 text-[11px] text-slate-400 border-t border-slate-200 mt-12">
         <p>© 介護活動・予定表連動システム - デイサービス & ヘルパーステーション連携</p>
       </footer>
+
+      {/* QR Code Mobile Link Modal */}
+      <AnimatePresence>
+        {showQrModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden"
+            >
+              {/* Header */}
+              <div className="bg-gradient-to-r from-pink-600 to-rose-600 px-6 py-4 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-white/20 rounded-xl">
+                    <QrCode className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-black">スマホ画面・QR連携</h3>
+                    <p className="text-xs text-pink-100">ヘルパー端末用リアルタイム画面</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowQrModal(false)}
+                  className="p-1.5 hover:bg-white/20 rounded-xl text-white transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Content */}
+              <div className="p-6 space-y-5 text-center">
+                <div className="inline-block p-4 bg-white rounded-2xl border-2 border-pink-200 shadow-sm">
+                  {typeof window !== "undefined" && (
+                    <QRCodeSVG
+                      value={`${window.location.origin}${window.location.pathname}?view=mobile`}
+                      size={200}
+                      level="M"
+                      includeMargin={true}
+                    />
+                  )}
+                </div>
+
+                <div className="space-y-2 text-left bg-pink-50/60 rounded-2xl p-4 border border-pink-100">
+                  <div className="flex items-center gap-2 text-pink-900 text-xs font-bold">
+                    <Smartphone className="w-4 h-4 text-pink-600" />
+                    <span>スマートフォンのカメラでQRをスキャン</span>
+                  </div>
+                  <p className="text-[11px] text-slate-600 leading-relaxed">
+                    PCで作成・編集した活動表やシフト・申し送り事項が、即座にスマホ画面へ自動同期されます。
+                  </p>
+                </div>
+
+                {/* URL and Copy Button */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}?view=mobile` : ""}
+                      className="w-full text-xs px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-700 select-all font-mono"
+                    />
+                    <button
+                      onClick={() => {
+                        if (typeof window !== "undefined") {
+                          navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=mobile`);
+                          setCopiedUrl(true);
+                          setTimeout(() => setCopiedUrl(false), 2000);
+                        }
+                      }}
+                      className="px-3.5 py-2.5 bg-pink-600 hover:bg-pink-700 active:bg-pink-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-xs"
+                    >
+                      {copiedUrl ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedUrl ? "コピー完了" : "URLコピー"}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                    <span className="flex items-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                      同期サーバー: 稼働中
+                    </span>
+                    <a
+                      href={typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}?view=mobile` : "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-pink-600 hover:underline flex items-center gap-1 font-bold"
+                    >
+                      <span>新しいタブで開く</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowQrModal(false)}
+                  className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-sm"
+                >
+                  閉じる
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
