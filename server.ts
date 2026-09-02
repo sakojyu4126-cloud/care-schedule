@@ -29,6 +29,7 @@ interface SyncData {
   settings: any;
   reports: any[];
   freeStickers: any[];
+  selectedDate?: string;
   updatedAt: number;
   lastUpdatedBy: string;
 }
@@ -41,6 +42,7 @@ let serverState: SyncData = {
   settings: null,
   reports: [],
   freeStickers: [],
+  selectedDate: "",
   updatedAt: 0,
   lastUpdatedBy: ""
 };
@@ -67,6 +69,7 @@ app.get("/api/sync", (req, res) => {
     settings: serverState.settings,
     reports: serverState.reports,
     freeStickers: serverState.freeStickers,
+    selectedDate: serverState.selectedDate || "",
     updatedAt: serverState.updatedAt,
     lastUpdatedBy: serverState.lastUpdatedBy || ""
   });
@@ -74,7 +77,7 @@ app.get("/api/sync", (req, res) => {
 
 app.post("/api/sync", (req, res) => {
   try {
-    const { clients, activities, settings, reports, freeStickers, updatedAt, lastUpdatedBy } = req.body;
+    const { clients, activities, settings, reports, freeStickers, selectedDate, updatedAt, lastUpdatedBy } = req.body;
     const clientTimestamp = Number(updatedAt) || 0;
 
     // Safety check: Do not allow replacing production 50+ clients with legacy small/mock clients list
@@ -88,9 +91,9 @@ app.post("/api/sync", (req, res) => {
       });
     }
 
-    // Only update if server has no data, or if the client sending has a newer version,
+    // Only update if server has no data, or if the client sending has a newer/equal version,
     // or if the client explicitly pushes an update (clientTimestamp === 0 / force override)
-    if (!serverState.hasData || clientTimestamp > serverState.updatedAt || clientTimestamp === 0) {
+    if (!serverState.hasData || clientTimestamp >= (serverState.updatedAt || 0) || clientTimestamp === 0) {
       serverState = {
         hasData: true,
         clients: clients || [],
@@ -98,6 +101,7 @@ app.post("/api/sync", (req, res) => {
         settings: settings || null,
         reports: reports || [],
         freeStickers: freeStickers || [],
+        selectedDate: selectedDate || serverState.selectedDate || "",
         updatedAt: Date.now(),
         lastUpdatedBy: lastUpdatedBy || ""
       };

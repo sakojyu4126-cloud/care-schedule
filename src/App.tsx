@@ -12,6 +12,7 @@ import MobileHelperView from "./components/MobileHelperView";
 import ClientMasterTab from "./components/ClientMasterTab";
 import SettingsTab from "./components/SettingsTab";
 import ExtraordinaryReportTab from "./components/ExtraordinaryReportTab";
+import QRCodeModal from "./components/QRCodeModal";
 import {
   Calendar,
   Smartphone,
@@ -34,7 +35,8 @@ import {
   Upload,
   Database,
   FileCode,
-  FileJson
+  FileJson,
+  QrCode
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -157,7 +159,16 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [selectedDate, setSelectedDate] = useState(() => getTodayDateString());
+  const [selectedDate, setSelectedDate] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlDate = params.get("date");
+      if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
+        return urlDate;
+      }
+    }
+    return getTodayDateString();
+  });
   const [isMobileMode, setIsMobileMode] = useState(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -171,6 +182,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"activities" | "clients" | "settings" | "reports">("activities");
   const [isAdminLocked, setIsAdminLocked] = useState(true);
   const [externalAddTrigger, setExternalAddTrigger] = useState(0);
+  const [showQrModal, setShowQrModal] = useState(false);
 
   // 1.5. Server Synchronization State
   const [clientId] = useState(() => {
@@ -227,11 +239,26 @@ export default function App() {
         
         if (data.success && data.hasData) {
           isApplyingServerSync.current = true;
-          if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
-          if (Array.isArray(data.activities)) setActivities(data.activities);
-          if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
-          if (Array.isArray(data.reports)) setReports(data.reports);
-          if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
+          if (Array.isArray(data.clients) && data.clients.length > 0) {
+            setClients(data.clients);
+            localStorage.setItem("care_clients", JSON.stringify(data.clients));
+          }
+          if (Array.isArray(data.activities)) {
+            setActivities(data.activities);
+            localStorage.setItem("care_activities", JSON.stringify(data.activities));
+          }
+          if (data.settings && typeof data.settings === "object") {
+            handleUpdateSettings(data.settings);
+            localStorage.setItem("care_settings", JSON.stringify(data.settings));
+          }
+          if (Array.isArray(data.reports)) {
+            setReports(data.reports);
+            localStorage.setItem("care_extraordinary_reports", JSON.stringify(data.reports));
+          }
+          if (Array.isArray(data.freeStickers)) {
+            setFreeStickers(data.freeStickers);
+            localStorage.setItem("care_free_stickers", JSON.stringify(data.freeStickers));
+          }
           
           const syncTime = data.updatedAt || Date.now();
           setLastSyncTime(syncTime);
@@ -250,6 +277,7 @@ export default function App() {
               settings,
               reports,
               freeStickers,
+              selectedDate,
               updatedAt: now,
               lastUpdatedBy: clientId
             };
@@ -278,6 +306,47 @@ export default function App() {
     fetchInitialData();
   }, []);
 
+  const handleForceRefresh = async () => {
+    try {
+      setSyncStatus("syncing");
+      const res = await fetch("/api/sync");
+      const data = await res.json();
+      if (data.success && data.hasData) {
+        isApplyingServerSync.current = true;
+        if (Array.isArray(data.clients)) {
+          setClients(data.clients);
+          localStorage.setItem("care_clients", JSON.stringify(data.clients));
+        }
+        if (Array.isArray(data.activities)) {
+          setActivities(data.activities);
+          localStorage.setItem("care_activities", JSON.stringify(data.activities));
+        }
+        if (data.settings) {
+          handleUpdateSettings(data.settings);
+          localStorage.setItem("care_settings", JSON.stringify(data.settings));
+        }
+        if (Array.isArray(data.reports)) {
+          setReports(data.reports);
+          localStorage.setItem("care_extraordinary_reports", JSON.stringify(data.reports));
+        }
+        if (Array.isArray(data.freeStickers)) {
+          setFreeStickers(data.freeStickers);
+          localStorage.setItem("care_free_stickers", JSON.stringify(data.freeStickers));
+        }
+        const syncTime = data.updatedAt || Date.now();
+        setLastSyncTime(syncTime);
+        localStorage.setItem("care_last_sync_time", String(syncTime));
+        setSyncStatus("synced");
+        setTimeout(() => {
+          isApplyingServerSync.current = false;
+        }, 150);
+      }
+    } catch (err) {
+      console.error("Manual refresh failed:", err);
+      setSyncStatus("offline");
+    }
+  };
+
   useEffect(() => {
     let active = true;
     const pollSync = async () => {
@@ -295,12 +364,28 @@ export default function App() {
               // On mobile, auto-apply server updates immediately so caregivers always see the exact PC schedule
               if (isMobileMode) {
                 isApplyingServerSync.current = true;
-                if (data.clients) setClients(data.clients);
-                if (data.activities) setActivities(data.activities);
-                if (data.settings) handleUpdateSettings(data.settings);
-                if (data.reports) setReports(data.reports);
-                if (data.freeStickers) setFreeStickers(data.freeStickers);
+                if (Array.isArray(data.clients)) {
+                  setClients(data.clients);
+                  localStorage.setItem("care_clients", JSON.stringify(data.clients));
+                }
+                if (Array.isArray(data.activities)) {
+                  setActivities(data.activities);
+                  localStorage.setItem("care_activities", JSON.stringify(data.activities));
+                }
+                if (data.settings) {
+                  handleUpdateSettings(data.settings);
+                  localStorage.setItem("care_settings", JSON.stringify(data.settings));
+                }
+                if (Array.isArray(data.reports)) {
+                  setReports(data.reports);
+                  localStorage.setItem("care_extraordinary_reports", JSON.stringify(data.reports));
+                }
+                if (Array.isArray(data.freeStickers)) {
+                  setFreeStickers(data.freeStickers);
+                  localStorage.setItem("care_free_stickers", JSON.stringify(data.freeStickers));
+                }
                 setLastSyncTime(data.updatedAt);
+                localStorage.setItem("care_last_sync_time", String(data.updatedAt));
                 setSyncStatus("synced");
                 setTimeout(() => {
                   isApplyingServerSync.current = false;
@@ -320,7 +405,7 @@ export default function App() {
       }
     };
 
-    const interval = setInterval(pollSync, 4000);
+    const interval = setInterval(pollSync, 3500);
     const handleFocus = () => {
       pollSync();
     };
@@ -503,6 +588,7 @@ export default function App() {
           settings,
           reports,
           freeStickers,
+          selectedDate,
           updatedAt: now,
           lastUpdatedBy: clientId
         };
@@ -523,9 +609,9 @@ export default function App() {
       }
     };
 
-    const timer = setTimeout(pushData, 3000);
+    const timer = setTimeout(pushData, 1000);
     return () => clearTimeout(timer);
-  }, [clients, activities, settings, reports, freeStickers, clientId]);
+  }, [clients, activities, settings, reports, freeStickers, selectedDate, clientId]);
 
   // Master-to-Daily Synchronization:
   // When clients master updates (add, remove, edit weekly services), immediately sync current and future activities (today onwards).
@@ -604,6 +690,15 @@ export default function App() {
                 className="hidden"
               />
             </label>
+
+            <button
+              onClick={() => setShowQrModal(true)}
+              className="flex items-center gap-1.5 text-xs font-black px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-xs transition-all cursor-pointer select-none"
+              title="現場ヘルパー用スマートフォンの接続QRコードを表示"
+            >
+              <QrCode className="w-3.5 h-3.5" />
+              <span>スマホ連携 (QR)</span>
+            </button>
 
             <div className="flex items-center gap-1 bg-slate-150 p-1 rounded-xl border border-slate-200 selection:bg-transparent shadow-xs">
               <button
@@ -900,9 +995,19 @@ export default function App() {
             onUpdateReports={setReports}
             freeStickers={freeStickers}
             onUpdateActivities={setActivities}
+            syncStatus={syncStatus}
+            onRefreshSync={handleForceRefresh}
           />
         </main>
       )}
+
+      {/* QR Code Modal for Smartphone Device Connection */}
+      <QRCodeModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        selectedDate={selectedDate}
+        syncStatus={syncStatus}
+      />
 
       <footer className="text-center py-8 text-[11px] text-slate-400 border-t border-slate-200 mt-12">
         <p>© 介護活動・予定表連動システム - デイサービス & ヘルパーステーション連携</p>

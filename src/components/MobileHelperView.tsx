@@ -3,10 +3,25 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { DailyActivity, AppSettings, Client, ExtraordinaryReport, FreeSticker } from "../types";
-import { Search, Pill, MessageSquare, AlertCircle, Sparkles, Calendar, Users, RefreshCw } from "lucide-react";
+import { 
+  Search, 
+  Pill, 
+  MessageSquare, 
+  AlertCircle, 
+  Sparkles, 
+  Calendar, 
+  Users, 
+  RefreshCw, 
+  FileEdit, 
+  LayoutGrid, 
+  ClipboardList,
+  CheckCircle2
+} from "lucide-react";
 import { MedicineSticker } from "./DailyActivityTable";
+import MobileReportForm from "./MobileReportForm";
+import WeeklyScheduleBoard from "./WeeklyScheduleBoard";
 import {
   formatTimeHHMM,
   parseTimeToMinutes,
@@ -29,6 +44,8 @@ interface MobileHelperViewProps {
   onUpdateReports?: (reports: ExtraordinaryReport[]) => void;
   freeStickers?: FreeSticker[];
   onUpdateActivities?: (newActivities: DailyActivity[]) => void;
+  syncStatus?: "synced" | "syncing" | "error" | "offline";
+  onRefreshSync?: () => void;
 }
 
 // Formatter to extract surname safely without trailing "様"
@@ -79,7 +96,7 @@ function HelperInstructionSection({
   const [isEditing, setIsEditing] = useState(false);
   const [text, setText] = useState(activity.helperInstruction || "");
 
-  React.useEffect(() => {
+  useEffect(() => {
     setText(activity.helperInstruction || "");
   }, [activity.helperInstruction]);
 
@@ -169,9 +186,16 @@ export default function MobileHelperView({
   clients,
   selectedDate,
   onDateChange,
+  reports = [],
+  onUpdateReports,
   freeStickers = [],
-  onUpdateActivities
+  onUpdateActivities,
+  syncStatus = "synced",
+  onRefreshSync
 }: MobileHelperViewProps) {
+  // Active Tab State (3 Tabs: activities, master, report)
+  const [activeTab, setActiveTab] = useState<"activities" | "master" | "report">("activities");
+
   // Filter by caregiver name or route key (Default: "All" for whole team view)
   const [selectedHelper, setSelectedHelper] = useState<string>("All"); 
   const [searchQuery, setSearchQuery] = useState("");
@@ -188,7 +212,7 @@ export default function MobileHelperView({
     return isNaN(d.getTime()) ? new Date().getMonth() : d.getMonth();
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     const d = new Date(selectedDate);
     if (!isNaN(d.getTime())) {
       setCalendarYear(d.getFullYear());
@@ -214,7 +238,7 @@ export default function MobileHelperView({
   const totalDaysInMonth = new Date(calendarYear, calendarMonth + 1, 0).getDate();
   const daysInMonthArray = Array.from({ length: totalDaysInMonth }, (_, i) => i + 1);
 
-  // 1. Resolve helper names dynamically based on the selected date (exactly matching PC DailyActivityTable)
+  // 1. Resolve helper names dynamically based on the selected date (matching PC DailyActivityTable)
   const resolvedHelperRoutes = React.useMemo(() => {
     return resolveHelperRoutesForDate(selectedDate, settings);
   }, [settings, selectedDate]);
@@ -406,35 +430,48 @@ export default function MobileHelperView({
   };
 
   return (
-    <div className="max-w-md mx-auto bg-slate-100 min-h-screen pb-20 font-sans antialiased text-slate-900 selection:bg-indigo-100">
+    <div className="max-w-md mx-auto bg-slate-100 min-h-screen pb-24 font-sans antialiased text-slate-900 selection:bg-indigo-100 relative">
       
-      {/* 📱 Mobile Top Header (Clean Date Selector) */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3 shadow-xs sticky top-0 z-30">
-        <div className="flex items-center justify-between bg-slate-50 rounded-xl p-1.5 border border-slate-200/80 relative">
+      {/* 📱 Mobile Top Header (Date Selector + Sync Status) */}
+      <div className="bg-white border-b border-slate-200 px-3 py-2.5 shadow-xs sticky top-0 z-30">
+        <div className="flex items-center justify-between gap-1.5 bg-slate-50 rounded-xl p-1 border border-slate-200/80 relative">
           <button
             onClick={() => handleShiftDate(-1)}
-            className="px-3 py-1 hover:bg-slate-200/50 active:bg-slate-200 rounded-lg text-slate-800 transition-colors cursor-pointer font-black select-none text-base"
+            className="px-2.5 py-1 hover:bg-slate-200/50 active:bg-slate-200 rounded-lg text-slate-800 transition-colors cursor-pointer font-black select-none text-sm"
           >
             ◀
           </button>
           
           <button 
             onClick={handleCalendarClick}
-            className="flex items-center gap-2 hover:bg-slate-200/50 px-3 py-1.5 rounded-lg transition-all relative cursor-pointer notranslate"
+            className="flex items-center gap-1.5 hover:bg-slate-200/50 px-2.5 py-1 rounded-lg transition-all relative cursor-pointer notranslate"
             translate="no"
           >
-            <Calendar className="w-4 h-4 text-[#ec4899] shrink-0" />
-            <span className="text-sm font-black text-slate-900 tracking-tight select-none">
-              {selectedDate.replace(/-/g, "/")} <span className="text-xs font-bold text-slate-500">{getJapaneseDayOfWeek(selectedDate)}</span>
+            <Calendar className="w-3.5 h-3.5 text-[#ec4899] shrink-0" />
+            <span className="text-xs font-black text-slate-900 tracking-tight select-none">
+              {selectedDate.replace(/-/g, "/")} <span className="text-[11px] font-bold text-slate-500">{getJapaneseDayOfWeek(selectedDate)}</span>
             </span>
           </button>
           
           <button
             onClick={() => handleShiftDate(1)}
-            className="px-3 py-1 hover:bg-slate-200/50 active:bg-slate-200 rounded-lg text-slate-800 transition-colors cursor-pointer font-black select-none text-base"
+            className="px-2.5 py-1 hover:bg-slate-200/50 active:bg-slate-200 rounded-lg text-slate-800 transition-colors cursor-pointer font-black select-none text-sm"
           >
             ▶
           </button>
+
+          {/* Refresh / Sync Button */}
+          {onRefreshSync && (
+            <button
+              onClick={onRefreshSync}
+              className={`p-1.5 rounded-lg text-slate-600 hover:bg-slate-200/60 active:scale-95 transition-all cursor-pointer ${
+                syncStatus === "syncing" ? "animate-spin text-indigo-600" : ""
+              }`}
+              title="最新データを手動更新"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {showCalendarModal && (
             <>
@@ -529,442 +566,535 @@ export default function MobileHelperView({
         </div>
       </div>
 
-      {/* 📢 Broadcast Message (全体指示のみをスッキリ表示。個別申し送り一覧は削除) */}
-      {settings.generalInstruction && (
-        <div className="p-3 pb-0">
-          <div className="bg-red-50 border border-red-200/80 p-3 rounded-xl flex gap-2.5 items-start shadow-3xs">
-            <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5 animate-[pulse_2s_infinite]" />
-            <div>
-              <span className="text-[10px] font-bold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-sm block w-max mb-1">全体指示</span>
-              <p className="text-xs text-red-950 font-bold leading-relaxed whitespace-pre-wrap">{settings.generalInstruction}</p>
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 1. TAB 1: 📋 毎日の活動表 (Daily Activities Tab)               */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {activeTab === "activities" && (
+        <div className="space-y-2.5 animate-in fade-in duration-150">
+          {/* 📢 Broadcast Message (全体指示のみをスッキリ表示。個別申し送り一覧は削除) */}
+          {settings.generalInstruction && (
+            <div className="px-3 pt-2">
+              <div className="bg-red-50 border border-red-200/80 p-2.5 rounded-xl flex gap-2.5 items-start shadow-3xs">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0 mt-0.5 animate-[pulse_2s_infinite]" />
+                <div>
+                  <span className="text-[9.5px] font-bold text-red-800 bg-red-100 px-1.5 py-0.5 rounded-sm block w-max mb-1">全体指示</span>
+                  <p className="text-xs text-red-950 font-bold leading-relaxed whitespace-pre-wrap">{settings.generalInstruction}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 👥 5名体制シフトボード (PCと完全連動する視覚的シフト＆ルート一覧) */}
+          <div className="px-3">
+            <div className="bg-white rounded-xl border border-slate-200 p-2.5 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
+                  <Users className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>本日の担当体制 (タップで担当絞込)</span>
+                </span>
+                {selectedHelper !== "All" && (
+                  <button
+                    onClick={() => setSelectedHelper("All")}
+                    className="text-[10px] font-extrabold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors cursor-pointer"
+                  >
+                    全担当を表示 ✕
+                  </button>
+                )}
+              </div>
+              
+              <div className="border border-slate-200 rounded-lg overflow-hidden flex flex-col bg-slate-50">
+                <div className="overflow-x-auto select-none">
+                  <div className="min-w-[480px] flex flex-col">
+                    {/* Column Headers (Route Key & Resolved Helper Name) */}
+                    <div className="flex text-slate-800 font-bold text-[11px] divide-x divide-slate-200 border-b border-slate-200 bg-slate-100">
+                      {/* Top left cell: "全体" toggle button */}
+                      <div
+                        onClick={() => setSelectedHelper("All")}
+                        className={`w-11 py-1 text-center shrink-0 cursor-pointer text-[10px] font-black tracking-tighter leading-none flex flex-col justify-center items-center transition-all border-r border-slate-200 ${
+                          selectedHelper === "All" 
+                            ? "bg-slate-800 text-white" 
+                            : "bg-slate-100 text-slate-500 hover:bg-slate-200"
+                        }`}
+                        title="全体の活動を表示します"
+                      >
+                        <span className="text-[10px] leading-none mb-0.5">📊</span>
+                        <span className="text-[9px]">全体</span>
+                      </div>
+
+                      {visibleRoutes.map((rt) => {
+                        const isSelected = selectedHelper !== "All" && (
+                          selectedHelper === rt.name || 
+                          selectedHelper === rt.key || 
+                          (rt.name && normalizeHelperName(rt.name) === normalizeHelperName(selectedHelper))
+                        );
+                        const isOtherSelected = selectedHelper !== "All" && !isSelected;
+                        const isA = rt.key.startsWith("A");
+                        const nameToSet = (rt.name && rt.name !== "未割り当て" && rt.name !== "未割当") ? rt.name : rt.key;
+
+                        return (
+                          <div
+                            key={rt.key}
+                            onClick={() => {
+                              setSelectedHelper(nameToSet);
+                            }}
+                            className={`flex-1 py-1 px-0.5 text-center cursor-pointer transition-all flex flex-col justify-center items-center ${
+                              isSelected
+                                ? isA 
+                                  ? "bg-blue-600 text-white font-black scale-102 z-10 shadow-xs" 
+                                  : "bg-purple-600 text-white font-black scale-102 z-10 shadow-xs"
+                                : isOtherSelected
+                                  ? "opacity-40 bg-slate-100 text-slate-400"
+                                  : isA 
+                                    ? "bg-[#eef6ff] text-blue-900 hover:bg-blue-100/80" 
+                                    : "bg-[#faf5ff] text-purple-900 hover:bg-purple-100/80"
+                            }`}
+                          >
+                            <span className={`text-[8px] font-mono leading-none font-extrabold ${isSelected ? "text-blue-100/90" : isA ? "text-blue-600" : "text-purple-600"}`}>{rt.key}</span>
+                            <span className="text-[11px] font-black tracking-tight leading-none mt-0.5 truncate max-w-full">
+                              {rt.name || "未割当"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Grid Timeline with Tracks */}
+                    <div className="flex relative h-[280px] overflow-y-auto divide-x divide-slate-200">
+                      {/* Left timeline axis */}
+                      <div className="w-11 bg-slate-100/80 text-[10px] font-mono font-bold text-slate-500 flex flex-col shrink-0 relative" style={{ height: "780px" }}>
+                        {hours.map((hr, idx) => (
+                          <div
+                            key={hr}
+                            className="absolute w-full text-center pt-0.5 border-t border-slate-200"
+                            style={{ top: `${idx * 60}px`, height: "60px" }}
+                          >
+                            {hr}
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Shift Column Tracks */}
+                      <div className="flex-1 relative bg-white" style={{ height: "780px" }}>
+                        <div className="absolute inset-0 pointer-events-none flex flex-col z-0">
+                          {hours.map((hr, idx) => (
+                            <div
+                              key={`line-${hr}`}
+                              className="absolute left-0 right-0 border-t border-slate-100"
+                              style={{ top: `${idx * 60}px`, height: "60px" }}
+                            />
+                          ))}
+                        </div>
+
+                        <div className="absolute inset-0 grid divide-x divide-slate-200 z-10" style={{ gridTemplateColumns: `repeat(${visibleRoutes.length}, minmax(0, 1fr))` }}>
+                          {visibleRoutes.map((rt) => {
+                            const routeActs = dateActivities.filter(act => act.route === rt.key);
+                            const isSelectedCol = selectedHelper !== "All" && (
+                              selectedHelper === rt.name || 
+                              selectedHelper === rt.key || 
+                              (rt.name && normalizeHelperName(rt.name) === normalizeHelperName(selectedHelper))
+                            );
+                            const isOtherColSelected = selectedHelper !== "All" && !isSelectedCol;
+                            const nameToSet = (rt.name && rt.name !== "未割り当て" && rt.name !== "未割当") ? rt.name : rt.key;
+
+                            return (
+                              <div 
+                                key={`mobile-col-${rt.key}`} 
+                                className={`relative h-full transition-all duration-300 ${
+                                  isSelectedCol 
+                                    ? "bg-blue-50/20 z-20" 
+                                    : isOtherColSelected 
+                                      ? "opacity-25 bg-slate-100/40 z-0" 
+                                      : "bg-transparent"
+                                }`}
+                              >
+                                {routeActs.map((act) => {
+                                  const isBreak = act.wing === "休憩";
+                                  const effStart = act.displayStartTime || act.startTime;
+                                  const effEnd = act.displayEndTime || act.endTime;
+                                  const startMin = parseTimeToMinutes(effStart);
+                                  const endMin = parseTimeToMinutes(effEnd);
+                                  const baseMin = 7 * 60;
+                                  const offsetMin = Math.max(0, startMin - baseMin);
+                                  const top = offsetMin * 1.0; // 1 min = 1px (60px = 1 hour)
+                                  const duration = Math.max(15, endMin - startMin);
+                                  const height = duration * 1.0;
+
+                                  return (
+                                    <div
+                                      key={`mobile-act-${act.id}`}
+                                      onClick={() => {
+                                        setSelectedHelper(nameToSet);
+                                      }}
+                                      className={`absolute left-0.5 right-0.5 rounded p-0.5 leading-[1.1] flex flex-col justify-center overflow-hidden border hover:scale-[1.02] cursor-pointer transition-all ${
+                                        isBreak 
+                                          ? "bg-[#999966] text-white border-[#717143]" 
+                                          : act.wing === "1番館" ? "bg-[#ffff73] text-slate-950 border-[#e2b007]"
+                                          : act.wing === "2番館" ? "bg-[#ff99cc] text-slate-950 border-[#db2777]"
+                                          : act.wing === "3番館" ? "bg-[#99ff66] text-slate-950 border-[#4d9900]"
+                                          : act.wing === "5番館" ? "bg-[#ffaa44] text-slate-950 border-[#ea580c]"
+                                          : act.wing === "6番館" ? "bg-[#e6ccff] text-slate-950 border-[#a855f7]"
+                                          : act.wing === "7番館" ? "bg-[#80FFFF] text-slate-950 border-[#009999]"
+                                          : "bg-[#33ffff] text-slate-950 border-[#0891b2]"
+                                      }`}
+                                      style={{
+                                        top: `${top}px`,
+                                        height: `${Math.max(18, height)}px`
+                                      }}
+                                    >
+                                      {duration < 45 ? (
+                                        isBreak ? (
+                                          <div className="flex items-center justify-between h-full overflow-hidden leading-none px-0.5 whitespace-nowrap gap-0.5">
+                                            <span className="font-black text-[8px] truncate leading-none">
+                                              休憩
+                                            </span>
+                                            <span className="text-[6.8px] font-mono opacity-90 leading-none tracking-tighter shrink-0 ml-auto">
+                                              {formatTimeHHMM(act.startTime)}-{formatTimeHHMM(act.endTime)}
+                                            </span>
+                                          </div>
+                                        ) : (
+                                          <div className="flex items-center justify-between h-full overflow-hidden leading-none px-0.5 whitespace-nowrap gap-0.5">
+                                            <span className="text-[8px] font-black truncate leading-none tracking-tight">
+                                              {getSurnameOnly(act.clientName, clients)}
+                                            </span>
+                                            <span className="text-[6.8px] font-mono font-bold opacity-90 leading-none tracking-tighter shrink-0 ml-auto">
+                                              {act.displayTimeText || `${formatTimeHHMM(act.startTime)}-${formatTimeHHMM(act.endTime)}`}
+                                            </span>
+                                          </div>
+                                        )
+                                      ) : (
+                                        isBreak ? (
+                                          <div className="flex flex-col justify-center items-center h-full text-center overflow-hidden leading-none px-0.5">
+                                            <div className="font-black text-[8.5px] truncate leading-none mb-1">
+                                              休憩
+                                            </div>
+                                            <div className="text-[7px] font-mono opacity-90 leading-none tracking-tighter truncate whitespace-nowrap">
+                                              {formatTimeHHMM(act.startTime)}-{formatTimeHHMM(act.endTime)}
+                                            </div>
+                                          </div>
+                                        ) : (
+                                          <div className="flex flex-col justify-center h-full overflow-hidden leading-none px-0.5">
+                                            <div className="text-[8.5px] font-black truncate leading-none tracking-tight mb-1">
+                                              {getSurnameOnly(act.clientName, clients)}
+                                            </div>
+                                            <div className="text-[7px] font-mono font-bold opacity-90 leading-none tracking-tighter truncate whitespace-nowrap">
+                                              {act.displayTimeText || `${formatTimeHHMM(act.startTime)}-${formatTimeHHMM(act.endTime)}`}
+                                            </div>
+                                          </div>
+                                        )
+                                      )}
+                                    </div>
+                                  );
+                                })}
+
+                                {/* Render free stickers if any */}
+                                {freeStickers
+                                  ?.filter((sticker) => sticker.route === rt.key && sticker.date === selectedDate)
+                                  .map((sticker) => (
+                                    <div
+                                      key={sticker.id}
+                                      className="absolute z-20 pointer-events-none"
+                                      style={{
+                                        left: `${sticker.x}%`,
+                                        top: `${sticker.y / 1.5}px`,
+                                        transform: "translate(-50%, -50%)"
+                                      }}
+                                    >
+                                      <MedicineSticker type={sticker.type} size="xs" />
+                                    </div>
+                                  ))}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* 🔍 Search Input */}
+          <div className="px-3">
+            <div className="relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="利用者名・部屋番号・支援内容で検索..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full text-xs pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-3xs"
+              />
+            </div>
+          </div>
+
+          {/* 📋 Timeline Service Cards List (活動表リスト) */}
+          <div className="px-3 space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                📋 {selectedHelper === "All" ? "全体の活動表一覧" : `${selectedHelper} の担当予定`} ({filteredActivities.length}件)
+              </span>
+            </div>
+
+            {filteredActivities.length === 0 ? (
+              <div className="bg-white rounded-2xl p-8 text-center text-slate-400 border border-slate-200 shadow-3xs">
+                <p className="text-xs">対象のサービスはありません</p>
+              </div>
+            ) : (
+              filteredActivities.map((act) => {
+                const isBreak = act.wing === "休憩";
+                const isExpanded = expandedId === act.id;
+                const effStart = act.displayStartTime || act.startTime;
+                const effEnd = act.displayEndTime || act.endTime;
+                const assignedHelper = getHelperForActivity(act);
+
+                const startMin = parseTimeToMinutes(effStart);
+                const endMin = parseTimeToMinutes(effEnd);
+                
+                const overlappingStickers = freeStickers.filter(s => {
+                  if (s.route !== act.route || s.date !== selectedDate) return false;
+                  const stickerMin = s.y / 1.5;
+                  return stickerMin >= startMin && stickerMin <= endMin;
+                });
+
+                const getStickersForActivityMobile = (item: DailyActivity) => {
+                  const list: { id: string; type: "medicine1" | "medicine2" | "medicine3"; x: number; y: number }[] = [];
+                  if (item.stickers && item.stickers.length > 0) {
+                    list.push(...item.stickers);
+                  } else if (item.medicine && item.medicine !== "none") {
+                    list.push({ id: `legacy-${item.id}`, type: item.medicine, x: 80, y: 50 });
+                  }
+                  overlappingStickers.forEach(fs => {
+                    if (!list.some(l => l.type === fs.type)) {
+                      list.push({ id: fs.id, type: fs.type, x: fs.x, y: 50 });
+                    }
+                  });
+                  return list;
+                };
+
+                const cardStickers = getStickersForActivityMobile(act);
+
+                return (
+                  <div
+                    key={act.id}
+                    onClick={() => setExpandedId(isExpanded ? null : act.id)}
+                    className={`rounded-xl border shadow-2xs overflow-hidden transition-all cursor-pointer select-none hover:brightness-98 active:brightness-95 ${getMobileWingStyle(act.wing, act.clientName, act.roomNumber)}`}
+                  >
+                    {isBreak ? (
+                      <div className="flex items-center justify-between p-3.5 text-xs text-white">
+                        <div className="flex items-center gap-1.5 pl-1">
+                          <Sparkles className="w-3.5 h-3.5 text-amber-200 shrink-0" />
+                          <span className="font-extrabold">{act.clientName || "休憩時間"}</span>
+                          {act.route && <span className="text-[10px] bg-black/20 px-1.5 py-0.5 rounded font-mono">{act.route}</span>}
+                        </div>
+                        <span className="font-mono font-black mr-1 text-white/95">{formatTimeHHMM(act.startTime)}〜{formatTimeHHMM(act.endTime)}</span>
+                      </div>
+                    ) : (
+                      <div className="p-3 flex flex-col justify-center">
+                        {/* Header Row: Room Number, Client Name, Time, Service Code, Route Badge */}
+                        <div className="flex items-center justify-between text-xs w-full overflow-hidden select-none">
+                          <div className="flex items-center gap-1.5 min-w-0 overflow-hidden flex-1 mr-1">
+                            {act.roomNumber && (
+                              <span className="text-[9px] px-1 bg-white/70 border border-black/10 text-slate-800 font-extrabold rounded shrink-0 whitespace-nowrap">
+                                {act.roomNumber}
+                              </span>
+                            )}
+                            <span className="font-black text-slate-900 text-[13px] truncate shrink min-w-0">
+                              {getSurnameOnly(act.clientName, clients)}様
+                            </span>
+                            <span className="font-bold text-slate-800 text-[11px] bg-white/60 px-1.5 py-0.5 rounded-sm font-mono tracking-tight shrink-0 whitespace-nowrap">
+                              {act.displayTimeText || `${formatTimeHHMM(act.startTime)}〜${formatTimeHHMM(act.endTime)}`}
+                            </span>
+                            {act.serviceCode && (
+                              <span className="text-[9px] bg-indigo-100/90 border border-indigo-200 text-indigo-950 font-black px-1.5 py-0.5 rounded shadow-3xs leading-none shrink-0 whitespace-nowrap">
+                                {getShortenedServiceCode(act.serviceCode)}
+                              </span>
+                            )}
+                            <span className="text-[9px] bg-black/5 border border-black/10 text-slate-700 font-bold px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
+                              {act.route} ({assignedHelper})
+                            </span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 shrink-0">
+                            {cardStickers.length > 0 && (
+                              <span className="flex items-center gap-0.5 bg-red-50 border border-red-200 px-1 py-0.25 rounded text-[9px] font-black text-red-700 animate-pulse">
+                                <Pill className="w-2.5 h-2.5 text-red-600" />
+                                <span>薬</span>
+                              </span>
+                            )}
+                            {act.helperInstruction && (
+                              <span className="flex items-center gap-0.5 bg-amber-500 text-white px-1.5 py-0.25 rounded text-[8.5px] font-black shadow-3xs animate-[bounce_2s_infinite]">
+                                申送りあり
+                              </span>
+                            )}
+                            <div className="text-slate-800 text-[9px] pl-1 font-black shrink-0 whitespace-nowrap">
+                              {isExpanded ? "▲" : "▼"}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Preview of content if not expanded */}
+                        {!isExpanded && act.content && (
+                          <div className="mt-1.5 pt-1 border-t border-black/10 flex items-center gap-1.5">
+                            <span className="text-[9px] font-bold text-slate-500 shrink-0">内容:</span>
+                            <p className="text-[11px] text-slate-700 font-medium truncate flex-1">
+                              {act.content}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Expanded Details & Individual Instruction Section */}
+                    {isExpanded && !isBreak && (
+                      <div className="border-t border-slate-200/80 bg-white/90 p-3 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap space-y-2.5" onClick={(e) => e.stopPropagation()}>
+                        <div>
+                          <div className="font-extrabold text-slate-600 mb-1 flex items-center gap-1 select-none text-[11px]">
+                            <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>サービス指示・介助詳細</span>
+                          </div>
+                          <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-slate-800 font-medium text-xs">
+                            {act.content || "登録されている介助指示はありません。"}
+                          </div>
+                        </div>
+
+                        {cardStickers.length > 0 && (
+                          <div className="text-[11px] text-red-700 font-bold flex flex-wrap gap-1.5 items-center bg-red-50 p-2 rounded-lg border border-red-200">
+                            <Pill className="w-3.5 h-3.5 text-red-600" />
+                            <span>配薬指示：</span>
+                            {cardStickers.map((s) => (
+                              <span key={s.id} className="inline-flex items-center gap-1 bg-white border border-red-200 px-1.5 py-0.5 rounded text-[10px]">
+                                <MedicineSticker type={s.type} size="xs" className="scale-75 origin-center" />
+                                <span>服薬確認</span>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="bg-slate-100 p-2 rounded-lg border border-slate-200">
+                            <span className="font-bold text-slate-500 block text-[9.5px]">担当ルート</span>
+                            <span className="font-black text-slate-800">{act.route}（{assignedHelper}）</span>
+                          </div>
+                          <div className="bg-slate-100 p-2 rounded-lg border border-slate-200">
+                            <span className="font-bold text-slate-500 block text-[9.5px]">建物・号室</span>
+                            <span className="font-black text-slate-800">{act.wing || "未設定"} {act.roomNumber ? `(${act.roomNumber}号室)` : ""}</span>
+                          </div>
+                        </div>
+
+                        {/* 📝 個別の申送り・報告事項（この担当者・担当時間のカード内のみに表示・編集） */}
+                        <HelperInstructionSection
+                          activity={act}
+                          activities={activities}
+                          onUpdateActivities={onUpdateActivities}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 2. TAB 2: 📅 原本マスタ (Master Weekly Schedule Tab)          */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {activeTab === "master" && (
+        <div className="p-2 space-y-3 animate-in fade-in duration-150">
+          <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-2xs">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                <LayoutGrid className="w-4 h-4 text-indigo-600" />
+                <span>原本マスタ（週間固定スケジュール）</span>
+              </span>
+              <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                閲覧専用
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500 font-medium mb-3">
+              各居室・利用者の標準週間スケジュールを確認できます。（左右にスクロールして全曜日・時間帯を閲覧可能です）
+            </p>
+            
+            <div className="overflow-x-auto border border-slate-200 rounded-xl bg-slate-50 -mx-1">
+              <div className="min-w-[700px] p-2">
+                <WeeklyScheduleBoard
+                  clients={clients}
+                  settings={settings}
+                  onEditClient={() => {}}
+                  onAddClient={() => {}}
+                  isLocked={true}
+                />
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 👥 5名体制シフトボード (PCと完全連動する視覚的シフト＆ルート一覧) */}
-      <div className="px-3 py-2.5">
-        <div className="bg-white rounded-xl border border-slate-200 p-3 shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-600 uppercase tracking-wider flex items-center gap-1">
-              <Users className="w-3.5 h-3.5 text-indigo-600" />
-              <span>本日の担当体制 (タップで担当絞込)</span>
-            </span>
-            {selectedHelper !== "All" && (
-              <button
-                onClick={() => setSelectedHelper("All")}
-                className="text-[10px] font-extrabold text-blue-600 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded transition-colors cursor-pointer"
-              >
-                全担当を表示 ✕
-              </button>
-            )}
-          </div>
-          
-          <div className="border border-slate-200 rounded-lg overflow-hidden flex flex-col bg-slate-50">
-            <div className="overflow-x-auto select-none">
-              <div className="min-w-[480px] flex flex-col">
-                {/* Column Headers (Route Key & Resolved Helper Name) */}
-                <div className="flex text-slate-800 font-bold text-[11px] divide-x divide-slate-200 border-b border-slate-200 bg-slate-100">
-                  {/* Top left cell: "全体" toggle button */}
-                  <div
-                    onClick={() => setSelectedHelper("All")}
-                    className={`w-11 py-1 text-center shrink-0 cursor-pointer text-[10px] font-black tracking-tighter leading-none flex flex-col justify-center items-center transition-all border-r border-slate-200 ${
-                      selectedHelper === "All" 
-                        ? "bg-slate-800 text-white" 
-                        : "bg-slate-100 text-slate-500 hover:bg-slate-200"
-                    }`}
-                    title="全体の活動を表示します"
-                  >
-                    <span className="text-[10px] leading-none mb-0.5">📊</span>
-                    <span className="text-[9px]">全体</span>
-                  </div>
-
-                  {visibleRoutes.map((rt) => {
-                    const isSelected = selectedHelper !== "All" && (
-                      selectedHelper === rt.name || 
-                      selectedHelper === rt.key || 
-                      (rt.name && normalizeHelperName(rt.name) === normalizeHelperName(selectedHelper))
-                    );
-                    const isOtherSelected = selectedHelper !== "All" && !isSelected;
-                    const isA = rt.key.startsWith("A");
-                    const nameToSet = (rt.name && rt.name !== "未割り当て" && rt.name !== "未割当") ? rt.name : rt.key;
-
-                    return (
-                      <div
-                        key={rt.key}
-                        onClick={() => {
-                          setSelectedHelper(nameToSet);
-                        }}
-                        className={`flex-1 py-1 px-0.5 text-center cursor-pointer transition-all flex flex-col justify-center items-center ${
-                          isSelected
-                            ? isA 
-                              ? "bg-blue-600 text-white font-black scale-102 z-10 shadow-xs" 
-                              : "bg-purple-600 text-white font-black scale-102 z-10 shadow-xs"
-                            : isOtherSelected
-                              ? "opacity-40 bg-slate-100 text-slate-400"
-                              : isA 
-                                ? "bg-[#eef6ff] text-blue-900 hover:bg-blue-100/80" 
-                                : "bg-[#faf5ff] text-purple-900 hover:bg-purple-100/80"
-                        }`}
-                      >
-                        <span className={`text-[8px] font-mono leading-none font-extrabold ${isSelected ? "text-blue-100/90" : isA ? "text-blue-600" : "text-purple-600"}`}>{rt.key}</span>
-                        <span className="text-[11px] font-black tracking-tight leading-none mt-0.5 truncate max-w-full">
-                          {rt.name || "未割当"}
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Grid Timeline with Tracks */}
-                <div className="flex relative h-[280px] overflow-y-auto divide-x divide-slate-200">
-                  {/* Left timeline axis */}
-                  <div className="w-11 bg-slate-100/80 text-[10px] font-mono font-bold text-slate-500 flex flex-col shrink-0 relative" style={{ height: "780px" }}>
-                    {hours.map((hr, idx) => (
-                      <div
-                        key={hr}
-                        className="absolute w-full text-center pt-0.5 border-t border-slate-200"
-                        style={{ top: `${idx * 60}px`, height: "60px" }}
-                      >
-                        {hr}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Shift Column Tracks */}
-                  <div className="flex-1 relative bg-white" style={{ height: "780px" }}>
-                    <div className="absolute inset-0 pointer-events-none flex flex-col z-0">
-                      {hours.map((hr, idx) => (
-                        <div
-                          key={`line-${hr}`}
-                          className="absolute left-0 right-0 border-t border-slate-100"
-                          style={{ top: `${idx * 60}px`, height: "60px" }}
-                        />
-                      ))}
-                    </div>
-
-                    <div className="absolute inset-0 grid divide-x divide-slate-200 z-10" style={{ gridTemplateColumns: `repeat(${visibleRoutes.length}, minmax(0, 1fr))` }}>
-                      {visibleRoutes.map((rt) => {
-                        const routeActs = dateActivities.filter(act => act.route === rt.key);
-                        const isSelectedCol = selectedHelper !== "All" && (
-                          selectedHelper === rt.name || 
-                          selectedHelper === rt.key || 
-                          (rt.name && normalizeHelperName(rt.name) === normalizeHelperName(selectedHelper))
-                        );
-                        const isOtherColSelected = selectedHelper !== "All" && !isSelectedCol;
-                        const nameToSet = (rt.name && rt.name !== "未割り当て" && rt.name !== "未割当") ? rt.name : rt.key;
-
-                        return (
-                          <div 
-                            key={`mobile-col-${rt.key}`} 
-                            className={`relative h-full transition-all duration-300 ${
-                              isSelectedCol 
-                                ? "bg-blue-50/20 z-20" 
-                                : isOtherColSelected 
-                                  ? "opacity-25 bg-slate-100/40 z-0" 
-                                  : "bg-transparent"
-                            }`}
-                          >
-                            {routeActs.map((act) => {
-                              const isBreak = act.wing === "休憩";
-                              const effStart = act.displayStartTime || act.startTime;
-                              const effEnd = act.displayEndTime || act.endTime;
-                              const startMin = parseTimeToMinutes(effStart);
-                              const endMin = parseTimeToMinutes(effEnd);
-                              const baseMin = 7 * 60;
-                              const offsetMin = Math.max(0, startMin - baseMin);
-                              const top = offsetMin * 1.0; // 1 min = 1px (60px = 1 hour)
-                              const duration = Math.max(15, endMin - startMin);
-                              const height = duration * 1.0;
-
-                              return (
-                                <div
-                                  key={`mobile-act-${act.id}`}
-                                  onClick={() => {
-                                    setSelectedHelper(nameToSet);
-                                  }}
-                                  className={`absolute left-0.5 right-0.5 rounded p-0.5 leading-[1.1] flex flex-col justify-center overflow-hidden border hover:scale-[1.02] cursor-pointer transition-all ${
-                                    isBreak 
-                                      ? "bg-[#999966] text-white border-[#717143]" 
-                                      : act.wing === "1番館" ? "bg-[#ffff73] text-slate-950 border-[#e2b007]"
-                                      : act.wing === "2番館" ? "bg-[#ff99cc] text-slate-950 border-[#db2777]"
-                                      : act.wing === "3番館" ? "bg-[#99ff66] text-slate-950 border-[#4d9900]"
-                                      : act.wing === "5番館" ? "bg-[#ffaa44] text-slate-950 border-[#ea580c]"
-                                      : act.wing === "6番館" ? "bg-[#e6ccff] text-slate-950 border-[#a855f7]"
-                                      : act.wing === "7番館" ? "bg-[#80FFFF] text-slate-950 border-[#009999]"
-                                      : "bg-[#33ffff] text-slate-950 border-[#0891b2]"
-                                  }`}
-                                  style={{
-                                    top: `${top}px`,
-                                    height: `${Math.max(18, height)}px`
-                                  }}
-                                >
-                                  {duration < 45 ? (
-                                    isBreak ? (
-                                      <div className="flex items-center justify-between h-full overflow-hidden leading-none px-0.5 whitespace-nowrap gap-0.5">
-                                        <span className="font-black text-[8px] truncate leading-none">
-                                          休憩
-                                        </span>
-                                        <span className="text-[6.8px] font-mono opacity-90 leading-none tracking-tighter shrink-0 ml-auto">
-                                          {formatTimeHHMM(act.startTime)}-{formatTimeHHMM(act.endTime)}
-                                        </span>
-                                      </div>
-                                    ) : (
-                                      <div className="flex items-center justify-between h-full overflow-hidden leading-none px-0.5 whitespace-nowrap gap-0.5">
-                                        <span className="text-[8px] font-black truncate leading-none tracking-tight">
-                                          {getSurnameOnly(act.clientName, clients)}
-                                        </span>
-                                        <span className="text-[6.8px] font-mono font-bold opacity-90 leading-none tracking-tighter shrink-0 ml-auto">
-                                          {act.displayTimeText || `${formatTimeHHMM(act.startTime)}-${formatTimeHHMM(act.endTime)}`}
-                                        </span>
-                                      </div>
-                                    )
-                                  ) : (
-                                    isBreak ? (
-                                      <div className="flex flex-col justify-center items-center h-full text-center overflow-hidden leading-none px-0.5">
-                                        <div className="font-black text-[8.5px] truncate leading-none mb-1">
-                                          休憩
-                                        </div>
-                                        <div className="text-[7px] font-mono opacity-90 leading-none tracking-tighter truncate whitespace-nowrap">
-                                          {formatTimeHHMM(act.startTime)}-{formatTimeHHMM(act.endTime)}
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <div className="flex flex-col justify-center h-full overflow-hidden leading-none px-0.5">
-                                        <div className="text-[8.5px] font-black truncate leading-none tracking-tight mb-1">
-                                          {getSurnameOnly(act.clientName, clients)}
-                                        </div>
-                                        <div className="text-[7px] font-mono font-bold opacity-90 leading-none tracking-tighter truncate whitespace-nowrap">
-                                          {act.displayTimeText || `${formatTimeHHMM(act.startTime)}-${formatTimeHHMM(act.endTime)}`}
-                                        </div>
-                                      </div>
-                                    )
-                                  )}
-                                </div>
-                              );
-                            })}
-
-                            {/* Render free stickers if any */}
-                            {freeStickers
-                              ?.filter((sticker) => sticker.route === rt.key && sticker.date === selectedDate)
-                              .map((sticker) => (
-                                <div
-                                  key={sticker.id}
-                                  className="absolute z-20 pointer-events-none"
-                                  style={{
-                                    left: `${sticker.x}%`,
-                                    top: `${sticker.y / 1.5}px`,
-                                    transform: "translate(-50%, -50%)"
-                                  }}
-                                >
-                                  <MedicineSticker type={sticker.type} size="xs" />
-                                </div>
-                              ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 🔍 Search Input */}
-      <div className="px-3 py-1">
-        <div className="relative">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="利用者名・部屋番号・支援内容で検索..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full text-xs pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-3xs"
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 3. TAB 3: ✍️ 臨時対応報告 (Extraordinary Report Form Tab)      */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      {activeTab === "report" && (
+        <div className="p-2 animate-in fade-in duration-150">
+          <MobileReportForm
+            clients={clients}
+            reports={reports}
+            onUpdateReports={onUpdateReports || (() => {})}
+            settings={settings}
+            selectedDate={selectedDate}
           />
         </div>
-      </div>
+      )}
 
-      {/* 📋 Timeline Service Cards List (活動表リスト) */}
-      <div className="px-3 py-2 space-y-2">
-        <div className="flex items-center justify-between px-1">
-          <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">
-            📋 {selectedHelper === "All" ? "全体の活動表一覧" : `${selectedHelper} の担当予定`} ({filteredActivities.length}件)
-          </span>
-        </div>
+      {/* ───────────────────────────────────────────────────────────── */}
+      {/* 📱 Bottom Navigation Bar (3 Tabs: 毎日の活動表 / 原本マスタ / 臨時対応報告) */}
+      {/* ───────────────────────────────────────────────────────────── */}
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-xl z-40 px-3 py-1.5 flex items-center justify-around">
+        <button
+          onClick={() => setActiveTab("activities")}
+          className={`flex-1 py-1.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+            activeTab === "activities"
+              ? "text-indigo-600 font-black bg-indigo-50/90 shadow-2xs"
+              : "text-slate-500 font-bold hover:text-slate-800 hover:bg-slate-100/60"
+          }`}
+        >
+          <ClipboardList className="w-4 h-4 shrink-0" />
+          <span className="text-[10.5px] tracking-tight leading-none">毎日の活動表</span>
+        </button>
 
-        {filteredActivities.length === 0 ? (
-          <div className="bg-white rounded-2xl p-8 text-center text-slate-400 border border-slate-200 shadow-3xs">
-            <p className="text-xs">対象のサービスはありません</p>
+        <button
+          onClick={() => setActiveTab("master")}
+          className={`flex-1 py-1.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer ${
+            activeTab === "master"
+              ? "text-indigo-600 font-black bg-indigo-50/90 shadow-2xs"
+              : "text-slate-500 font-bold hover:text-slate-800 hover:bg-slate-100/60"
+          }`}
+        >
+          <LayoutGrid className="w-4 h-4 shrink-0" />
+          <span className="text-[10.5px] tracking-tight leading-none">原本マスタ</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("report")}
+          className={`flex-1 py-1.5 px-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-all cursor-pointer relative ${
+            activeTab === "report"
+              ? "text-pink-600 font-black bg-pink-50/90 shadow-2xs"
+              : "text-slate-500 font-bold hover:text-slate-800 hover:bg-slate-100/60"
+          }`}
+        >
+          <div className="relative">
+            <FileEdit className="w-4 h-4 shrink-0" />
+            {reports && reports.filter(r => r.date === selectedDate).length > 0 && (
+              <span className="absolute -top-1.5 -right-2.5 bg-pink-500 text-white text-[9px] font-mono font-black px-1 rounded-full leading-tight">
+                {reports.filter(r => r.date === selectedDate).length}
+              </span>
+            )}
           </div>
-        ) : (
-          filteredActivities.map((act) => {
-            const isBreak = act.wing === "休憩";
-            const isExpanded = expandedId === act.id;
-            const effStart = act.displayStartTime || act.startTime;
-            const effEnd = act.displayEndTime || act.endTime;
-            const assignedHelper = getHelperForActivity(act);
-
-            const getDurationInMinutes = (start: string, end: string): number => {
-              if (!start || !end) return 0;
-              const [sh, sm] = start.trim().split(":").map(Number);
-              const [eh, em] = end.trim().split(":").map(Number);
-              if (isNaN(sh) || isNaN(sm) || isNaN(eh) || isNaN(em)) return 0;
-              return (eh * 60 + em) - (sh * 60 + sm);
-            };
-
-            const durationMinutes = getDurationInMinutes(effStart, effEnd);
-            const isShortService = durationMinutes <= 30;
-
-            const startMin = parseTimeToMinutes(effStart);
-            const endMin = parseTimeToMinutes(effEnd);
-            
-            const overlappingStickers = freeStickers.filter(s => {
-              if (s.route !== act.route || s.date !== selectedDate) return false;
-              const stickerMin = s.y / 1.5;
-              return stickerMin >= startMin && stickerMin <= endMin;
-            });
-
-            const getStickersForActivityMobile = (item: DailyActivity) => {
-              const list: { id: string; type: "medicine1" | "medicine2" | "medicine3"; x: number; y: number }[] = [];
-              if (item.stickers && item.stickers.length > 0) {
-                list.push(...item.stickers);
-              } else if (item.medicine && item.medicine !== "none") {
-                list.push({ id: `legacy-${item.id}`, type: item.medicine, x: 80, y: 50 });
-              }
-              overlappingStickers.forEach(fs => {
-                if (!list.some(l => l.type === fs.type)) {
-                  list.push({ id: fs.id, type: fs.type, x: fs.x, y: 50 });
-                }
-              });
-              return list;
-            };
-
-            const cardStickers = getStickersForActivityMobile(act);
-
-            return (
-              <div
-                key={act.id}
-                onClick={() => setExpandedId(isExpanded ? null : act.id)}
-                className={`rounded-xl border shadow-2xs overflow-hidden transition-all cursor-pointer select-none hover:brightness-98 active:brightness-95 ${getMobileWingStyle(act.wing, act.clientName, act.roomNumber)}`}
-              >
-                {isBreak ? (
-                  <div className="flex items-center justify-between p-3.5 text-xs text-white">
-                    <div className="flex items-center gap-1.5 pl-1">
-                      <Sparkles className="w-3.5 h-3.5 text-amber-200 shrink-0" />
-                      <span className="font-extrabold">{act.clientName || "休憩時間"}</span>
-                      {act.route && <span className="text-[10px] bg-black/20 px-1.5 py-0.5 rounded font-mono">{act.route}</span>}
-                    </div>
-                    <span className="font-mono font-black mr-1 text-white/95">{formatTimeHHMM(act.startTime)}〜{formatTimeHHMM(act.endTime)}</span>
-                  </div>
-                ) : (
-                  <div className="p-3 flex flex-col justify-center">
-                    {/* Header Row: Room Number, Client Name, Time, Service Code, Route Badge */}
-                    <div className="flex items-center justify-between text-xs w-full overflow-hidden select-none">
-                      <div className="flex items-center gap-1.5 min-w-0 overflow-hidden flex-1 mr-1">
-                        {act.roomNumber && (
-                          <span className="text-[9px] px-1 bg-white/70 border border-black/10 text-slate-800 font-extrabold rounded shrink-0 whitespace-nowrap">
-                            {act.roomNumber}
-                          </span>
-                        )}
-                        <span className="font-black text-slate-900 text-[13px] truncate shrink min-w-0">
-                          {getSurnameOnly(act.clientName, clients)}様
-                        </span>
-                        <span className="font-bold text-slate-800 text-[11px] bg-white/60 px-1.5 py-0.5 rounded-sm font-mono tracking-tight shrink-0 whitespace-nowrap">
-                          {act.displayTimeText || `${formatTimeHHMM(act.startTime)}〜${formatTimeHHMM(act.endTime)}`}
-                        </span>
-                        {act.serviceCode && (
-                          <span className="text-[9px] bg-indigo-100/90 border border-indigo-200 text-indigo-950 font-black px-1.5 py-0.5 rounded shadow-3xs leading-none shrink-0 whitespace-nowrap">
-                            {getShortenedServiceCode(act.serviceCode)}
-                          </span>
-                        )}
-                        <span className="text-[9px] bg-black/5 border border-black/10 text-slate-700 font-bold px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">
-                          {act.route} ({assignedHelper})
-                        </span>
-                      </div>
-                      
-                      <div className="flex items-center gap-1 shrink-0">
-                        {cardStickers.length > 0 && (
-                          <span className="flex items-center gap-0.5 bg-red-50 border border-red-200 px-1 py-0.25 rounded text-[9px] font-black text-red-700 animate-pulse">
-                            <Pill className="w-2.5 h-2.5 text-red-600" />
-                            <span>薬</span>
-                          </span>
-                        )}
-                        {act.helperInstruction && (
-                          <span className="flex items-center gap-0.5 bg-amber-500 text-white px-1.5 py-0.25 rounded text-[8.5px] font-black shadow-3xs animate-[bounce_2s_infinite]">
-                            申送りあり
-                          </span>
-                        )}
-                        <div className="text-slate-800 text-[9px] pl-1 font-black shrink-0 whitespace-nowrap">
-                          {isExpanded ? "▲" : "▼"}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Preview of content if not expanded and not short */}
-                    {!isExpanded && act.content && (
-                      <div className="mt-1.5 pt-1 border-t border-black/10 flex items-center gap-1.5">
-                        <span className="text-[9px] font-bold text-slate-500 shrink-0">内容:</span>
-                        <p className="text-[11px] text-slate-700 font-medium truncate flex-1">
-                          {act.content}
-                        </p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Expanded Details & Individual Instruction Section */}
-                {isExpanded && !isBreak && (
-                  <div className="border-t border-slate-200/80 bg-white/90 p-3 text-xs text-slate-800 leading-relaxed whitespace-pre-wrap space-y-2.5" onClick={(e) => e.stopPropagation()}>
-                    <div>
-                      <div className="font-extrabold text-slate-600 mb-1 flex items-center gap-1 select-none text-[11px]">
-                        <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>サービス指示・介助詳細</span>
-                      </div>
-                      <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-slate-800 font-medium text-xs">
-                        {act.content || "登録されている介助指示はありません。"}
-                      </div>
-                    </div>
-
-                    {cardStickers.length > 0 && (
-                      <div className="text-[11px] text-red-700 font-bold flex flex-wrap gap-1.5 items-center bg-red-50 p-2 rounded-lg border border-red-200">
-                        <Pill className="w-3.5 h-3.5 text-red-600" />
-                        <span>配薬指示：</span>
-                        {cardStickers.map((s) => (
-                          <span key={s.id} className="inline-flex items-center gap-1 bg-white border border-red-200 px-1.5 py-0.5 rounded text-[10px]">
-                            <MedicineSticker type={s.type} size="xs" className="scale-75 origin-center" />
-                            <span>服薬確認</span>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      <div className="bg-slate-100 p-2 rounded-lg border border-slate-200">
-                        <span className="font-bold text-slate-500 block text-[9.5px]">担当ルート</span>
-                        <span className="font-black text-slate-800">{act.route}（{assignedHelper}）</span>
-                      </div>
-                      <div className="bg-slate-100 p-2 rounded-lg border border-slate-200">
-                        <span className="font-bold text-slate-500 block text-[9.5px]">建物・号室</span>
-                        <span className="font-black text-slate-800">{act.wing || "未設定"} {act.roomNumber ? `(${act.roomNumber}号室)` : ""}</span>
-                      </div>
-                    </div>
-
-                    {/* 📝 個別の申送り・報告事項（この担当者・担当時間のカード内のみに表示・編集） */}
-                    <HelperInstructionSection
-                      activity={act}
-                      activities={activities}
-                      onUpdateActivities={onUpdateActivities}
-                    />
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
+          <span className="text-[10.5px] tracking-tight leading-none">臨時対応報告</span>
+        </button>
+      </nav>
 
     </div>
   );
