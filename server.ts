@@ -33,7 +33,7 @@ interface SyncData {
   lastUpdatedBy: string;
 }
 
-// Read data store on startup
+// Read data store on startup or fallback to initial master datasets
 let serverState: SyncData = {
   hasData: false,
   clients: [],
@@ -45,20 +45,80 @@ let serverState: SyncData = {
   lastUpdatedBy: ""
 };
 
+function loadInitialMasterFallback(): SyncData {
+  try {
+    const initClientsPath = path.join(process.cwd(), "src/utils/initialClients.json");
+    const initActivitiesPath = path.join(process.cwd(), "src/utils/initialActivities.json");
+    const initSettingsPath = path.join(process.cwd(), "src/utils/initialSettings.json");
+
+    const clients = fs.existsSync(initClientsPath) ? JSON.parse(fs.readFileSync(initClientsPath, "utf-8")) : [];
+    const activities = fs.existsSync(initActivitiesPath) ? JSON.parse(fs.readFileSync(initActivitiesPath, "utf-8")) : [];
+    const settings = fs.existsSync(initSettingsPath) ? JSON.parse(fs.readFileSync(initSettingsPath, "utf-8")) : null;
+
+    return {
+      hasData: true,
+      clients,
+      activities,
+      settings,
+      reports: [],
+      freeStickers: [],
+      updatedAt: Date.now(),
+      lastUpdatedBy: "server_master_init"
+    };
+  } catch (err) {
+    console.error("Failed to load initial master fallback:", err);
+    return {
+      hasData: false,
+      clients: [],
+      activities: [],
+      settings: null,
+      reports: [],
+      freeStickers: [],
+      updatedAt: 0,
+      lastUpdatedBy: ""
+    };
+  }
+}
+
 try {
   if (fs.existsSync(DATA_STORE_PATH)) {
     const raw = fs.readFileSync(DATA_STORE_PATH, "utf-8");
     serverState = JSON.parse(raw);
+    if (!serverState.clients || serverState.clients.length === 0 || !serverState.settings) {
+      console.log("data_store.json was incomplete. Seeding from master initial datasets...");
+      const fallback = loadInitialMasterFallback();
+      serverState = {
+        ...fallback,
+        ...serverState,
+        clients: serverState.clients && serverState.clients.length > 0 ? serverState.clients : fallback.clients,
+        activities: serverState.activities && serverState.activities.length > 0 ? serverState.activities : fallback.activities,
+        settings: serverState.settings ? serverState.settings : fallback.settings,
+        hasData: true,
+        updatedAt: serverState.updatedAt || Date.now()
+      };
+      fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
+    }
     console.log("Loaded existing data_store.json with updatedAt:", serverState.updatedAt, "by:", serverState.lastUpdatedBy);
   } else {
-    console.log("No data_store.json found. Will initialize on first client push.");
+    console.log("No data_store.json found. Seeding from master initial datasets...");
+    serverState = loadInitialMasterFallback();
+    if (serverState.hasData) {
+      fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
+    }
   }
 } catch (e) {
   console.error("Error loading data_store.json:", e);
+  serverState = loadInitialMasterFallback();
 }
 
 // Sync GET/POST endpoints
 app.get("/api/sync", (req, res) => {
+  // Enforce zero-cache headers to prevent mobile browsers (iOS Safari / Android Chrome) from serving stale data
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+
   res.json({
     success: true,
     hasData: serverState.hasData,
@@ -93,11 +153,11 @@ app.post("/api/sync", (req, res) => {
     if (!serverState.hasData || clientTimestamp > serverState.updatedAt || clientTimestamp === 0) {
       serverState = {
         hasData: true,
-        clients: clients || [],
-        activities: activities || [],
-        settings: settings || null,
-        reports: reports || [],
-        freeStickers: freeStickers || [],
+        clients: Array.isArray(clients) && clients.length > 0 ? clients : serverState.clients,
+        activities: Array.isArray(activities) && activities.length > 0 ? activities : serverState.activities,
+        settings: settings || serverState.settings,
+        reports: Array.isArray(reports) ? reports : serverState.reports,
+        freeStickers: Array.isArray(freeStickers) ? freeStickers : serverState.freeStickers,
         updatedAt: Date.now(),
         lastUpdatedBy: lastUpdatedBy || ""
       };
@@ -115,6 +175,38 @@ app.post("/api/sync", (req, res) => {
   } catch (error: any) {
     console.error("Sync POST error:", error);
     res.status(500).json({ error: error.message || "Failed to save sync data" });
+  }
+});
+
+// Standalone report submission endpoint for mobile helpers without pushing full database
+app.post("/api/report", (req, res) => {
+  try {
+    const newReport = req.body;
+    if (!newReport || !newReport.id) {
+      return res.status(400).json({ error: "Invalid report data" });
+    }
+
+    const existingReports = Array.isArray(serverState.reports) ? serverState.reports : [];
+    const updatedReports = [
+      newReport,
+      ...existingReports.filter((r: any) => r.id !== newReport.id)
+    ];
+
+    serverState.reports = updatedReports;
+    serverState.updatedAt = Date.now();
+    serverState.lastUpdatedBy = "mobile_report_" + (newReport.helperName || "unknown");
+
+    fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
+    console.log("Saved new report from mobile. Total reports:", updatedReports.length);
+
+    res.json({
+      success: true,
+      updatedAt: serverState.updatedAt,
+      reports: serverState.reports
+    });
+  } catch (err: any) {
+    console.error("Report POST error:", err);
+    res.status(500).json({ error: err.message || "Failed to save report" });
   }
 });
 

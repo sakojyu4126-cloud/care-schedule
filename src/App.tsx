@@ -216,11 +216,46 @@ export default function App() {
     if (isInitialSyncDone.current) markHasUserData();
   }, [freeStickers]);
 
+  const handleManualSync = async () => {
+    try {
+      setSyncStatus("syncing");
+      const res = await fetch(`/api/sync?t=${Date.now()}`, {
+        headers: { "Cache-Control": "no-cache" }
+      });
+      const data = await res.json();
+      
+      if (data.success && data.hasData) {
+        isApplyingServerSync.current = true;
+        if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
+        if (Array.isArray(data.activities)) setActivities(data.activities);
+        if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
+        if (Array.isArray(data.reports)) setReports(data.reports);
+        if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
+        
+        const syncTime = data.updatedAt || Date.now();
+        setLastSyncTime(syncTime);
+        localStorage.setItem("care_last_sync_time", String(syncTime));
+        localStorage.setItem("has_user_data", "true");
+        setSyncStatus("synced");
+        setTimeout(() => {
+          isApplyingServerSync.current = false;
+        }, 300);
+      } else {
+        setSyncStatus("synced");
+      }
+    } catch (err) {
+      console.error("Manual sync error:", err);
+      setSyncStatus("offline");
+    }
+  };
+
   useEffect(() => {
     const fetchInitialData = async () => {
       try {
         setSyncStatus("syncing");
-        const res = await fetch("/api/sync");
+        const res = await fetch(`/api/sync?t=${Date.now()}`, {
+          headers: { "Cache-Control": "no-cache" }
+        });
         const data = await res.json();
         
         if (data.success && data.hasData) {
@@ -274,13 +309,30 @@ export default function App() {
       }
     };
     fetchInitialData();
+
+    // Auto re-sync when smartphone/browser tab becomes visible or receives focus
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === "visible") {
+        fetchInitialData();
+      }
+    };
+
+    window.addEventListener("focus", handleVisibilityOrFocus);
+    document.addEventListener("visibilitychange", handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+    };
   }, []);
 
   useEffect(() => {
     let active = true;
     const pollSync = async () => {
       try {
-        const res = await fetch("/api/sync");
+        const res = await fetch(`/api/sync?t=${Date.now()}`, {
+          headers: { "Cache-Control": "no-cache" }
+        });
         const data = await res.json();
         if (!active) return;
 
@@ -311,7 +363,7 @@ export default function App() {
       }
     };
 
-    const interval = setInterval(pollSync, 3000);
+    const interval = setInterval(pollSync, 2000);
     return () => {
       active = false;
       clearInterval(interval);
@@ -836,28 +888,7 @@ export default function App() {
             onUpdateReports={setReports}
             freeStickers={freeStickers}
             onUpdateActivities={setActivities}
-            onManualSync={async () => {
-              try {
-                setSyncStatus("syncing");
-                const res = await fetch("/api/sync");
-                const data = await res.json();
-                if (data.success && data.hasData) {
-                  isApplyingServerSync.current = true;
-                  if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
-                  if (Array.isArray(data.activities)) setActivities(data.activities);
-                  if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
-                  if (Array.isArray(data.reports)) setReports(data.reports);
-                  if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
-                  setLastSyncTime(data.updatedAt || Date.now());
-                  setSyncStatus("synced");
-                  setTimeout(() => {
-                    isApplyingServerSync.current = false;
-                  }, 300);
-                }
-              } catch (e) {
-                setSyncStatus("offline");
-              }
-            }}
+            onManualSync={handleManualSync}
             syncStatus={syncStatus}
           />
         </main>

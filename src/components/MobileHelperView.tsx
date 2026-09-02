@@ -5,7 +5,7 @@
 
 import React, { useState } from "react";
 import { DailyActivity, AppSettings, Client, ExtraordinaryReport, FreeSticker } from "../types";
-import { CheckCircle2, Circle, Search, Pill, MessageSquare, AlertCircle, Sparkles, Calendar, PlusCircle, History } from "lucide-react";
+import { CheckCircle2, Circle, Search, Pill, MessageSquare, AlertCircle, Sparkles, Calendar, PlusCircle, History, RefreshCw } from "lucide-react";
 import MobileReportForm from "./MobileReportForm";
 import { MedicineSticker } from "./DailyActivityTable";
 import { formatTimeHHMM, parseTimeToMinutes, extractDailyActivities, getWingFromRoom, mergeActivitiesWithReports, getShortenedServiceCode, normalizeHelperName, resolveHelperRoutesForDate, isInvalidHelperName, getTodayDateString, normalizeDateStr } from "../utils/scheduler";
@@ -504,7 +504,27 @@ export default function MobileHelperView({
     <div className="max-w-md mx-auto bg-slate-100 min-h-screen pb-24 font-sans antialiased text-slate-900 selection:bg-indigo-100">
       
       {/* Mobile Top Header */}
-      <div className="bg-white border-b border-slate-200 px-3 sm:px-4 py-2.5 shadow-xs sticky top-0 z-20">
+      <div className="bg-white border-b border-slate-200 px-3 sm:px-4 py-2 shadow-xs sticky top-0 z-20">
+        {/* Real-time Server Sync Bar */}
+        <div className="flex items-center justify-between mb-1.5 px-0.5 text-[11px] select-none">
+          <div className="flex items-center gap-1.5 font-bold">
+            <span className={`w-2 h-2 rounded-full ${syncStatus === "syncing" ? "bg-amber-400 animate-ping" : syncStatus === "synced" ? "bg-emerald-500" : "bg-red-500"}`} />
+            <span className="text-slate-600">
+              {syncStatus === "syncing" ? "PCと同期中..." : syncStatus === "synced" ? "PCと常時連動中" : "オフライン"}
+            </span>
+          </div>
+          {onManualSync && (
+            <button
+              type="button"
+              onClick={() => onManualSync()}
+              className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 active:bg-blue-100 text-slate-700 active:text-blue-700 text-[10.5px] font-bold rounded-lg border border-slate-200/80 transition-all cursor-pointer touch-manipulation active:scale-95"
+            >
+              <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? "animate-spin text-blue-600" : "text-slate-500"}`} />
+              <span>最新データ更新</span>
+            </button>
+          )}
+        </div>
+
         {activeMobileView === "schedule" ? (
           /* High-Visibility Dark Blue Date Selector */
           <div className="bg-[#1e40af] text-white rounded-2xl p-2 sm:p-2.5 shadow-md flex items-center justify-between gap-1.5 relative select-none">
