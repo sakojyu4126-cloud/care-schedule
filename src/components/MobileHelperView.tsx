@@ -432,8 +432,9 @@ export default function MobileHelperView({
   return (
     <div className="max-w-md mx-auto bg-slate-100 min-h-screen pb-24 font-sans antialiased text-slate-900 selection:bg-indigo-100 relative">
       
-      {/* 📱 Mobile Top Header (Date Selector + Sync Status) */}
-      <div className="bg-white border-b border-slate-200 px-3 py-2.5 shadow-xs sticky top-0 z-30">
+      {/* 📱 Mobile Top Header (Date Selector + 3-Tab Segmented Switcher) */}
+      <div className="bg-white border-b border-slate-200 px-3 py-2 shadow-xs sticky top-0 z-30 space-y-2">
+        {/* Date Selector Row */}
         <div className="flex items-center justify-between gap-1.5 bg-slate-50 rounded-xl p-1 border border-slate-200/80 relative">
           <button
             onClick={() => handleShiftDate(-1)}
@@ -563,6 +564,52 @@ export default function MobileHelperView({
               </div>
             </>
           )}
+        </div>
+
+        {/* 🌟 3つのメインタブ切替ボタン（上部ヘッダー内） */}
+        <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl border border-slate-200">
+          <button
+            onClick={() => setActiveTab("activities")}
+            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer select-none ${
+              activeTab === "activities"
+                ? "bg-indigo-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+            }`}
+          >
+            <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">毎日の活動表</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("master")}
+            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer select-none ${
+              activeTab === "master"
+                ? "bg-indigo-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">原本マスタ</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("report")}
+            className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-1 cursor-pointer select-none relative ${
+              activeTab === "report"
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+            }`}
+          >
+            <FileEdit className="w-3.5 h-3.5 shrink-0" />
+            <span className="truncate">臨時対応報告</span>
+            {reports && reports.filter(r => r.date === selectedDate).length > 0 && (
+              <span className={`text-[9px] font-mono px-1 rounded-full leading-tight font-black ${
+                activeTab === "report" ? "bg-white text-emerald-700" : "bg-emerald-500 text-white"
+              }`}>
+                {reports.filter(r => r.date === selectedDate).length}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 

@@ -12,7 +12,6 @@ import MobileHelperView from "./components/MobileHelperView";
 import ClientMasterTab from "./components/ClientMasterTab";
 import SettingsTab from "./components/SettingsTab";
 import ExtraordinaryReportTab from "./components/ExtraordinaryReportTab";
-import QRCodeModal from "./components/QRCodeModal";
 import {
   Calendar,
   Smartphone,
@@ -35,8 +34,7 @@ import {
   Upload,
   Database,
   FileCode,
-  FileJson,
-  QrCode
+  FileJson
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -182,7 +180,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"activities" | "clients" | "settings" | "reports">("activities");
   const [isAdminLocked, setIsAdminLocked] = useState(true);
   const [externalAddTrigger, setExternalAddTrigger] = useState(0);
-  const [showQrModal, setShowQrModal] = useState(false);
 
   // 1.5. Server Synchronization State
   const [clientId] = useState(() => {
@@ -361,6 +358,12 @@ export default function App() {
               setLastSyncTime(data.updatedAt);
               setSyncStatus("synced");
             } else {
+              // Auto-merge reports into local state so mobile reports immediately show on PC without manual prompt
+              if (Array.isArray(data.reports)) {
+                setReports(data.reports);
+                localStorage.setItem("care_extraordinary_reports", JSON.stringify(data.reports));
+              }
+
               // On mobile, auto-apply server updates immediately so caregivers always see the exact PC schedule
               if (isMobileMode) {
                 isApplyingServerSync.current = true;
@@ -375,10 +378,6 @@ export default function App() {
                 if (data.settings) {
                   handleUpdateSettings(data.settings);
                   localStorage.setItem("care_settings", JSON.stringify(data.settings));
-                }
-                if (Array.isArray(data.reports)) {
-                  setReports(data.reports);
-                  localStorage.setItem("care_extraordinary_reports", JSON.stringify(data.reports));
                 }
                 if (Array.isArray(data.freeStickers)) {
                   setFreeStickers(data.freeStickers);
@@ -613,6 +612,34 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [clients, activities, settings, reports, freeStickers, selectedDate, clientId]);
 
+  // Instant update and sync for extraordinary reports
+  const handleUpdateReports = async (newReports: ExtraordinaryReport[]) => {
+    setReports(newReports);
+    localStorage.setItem("care_extraordinary_reports", JSON.stringify(newReports));
+    try {
+      const now = Date.now();
+      const payload = {
+        clients,
+        activities,
+        settings,
+        reports: newReports,
+        freeStickers,
+        selectedDate,
+        updatedAt: now,
+        lastUpdatedBy: clientId
+      };
+      await fetch("/api/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      setLastSyncTime(now);
+      localStorage.setItem("care_last_sync_time", String(now));
+    } catch (err) {
+      console.error("Failed to sync report immediately:", err);
+    }
+  };
+
   // Master-to-Daily Synchronization:
   // When clients master updates (add, remove, edit weekly services), immediately sync current and future activities (today onwards).
   // Strictly protects past activities prior to today (before getTodayDateString()) without deleting or inserting cards.
@@ -690,15 +717,6 @@ export default function App() {
                 className="hidden"
               />
             </label>
-
-            <button
-              onClick={() => setShowQrModal(true)}
-              className="flex items-center gap-1.5 text-xs font-black px-3.5 py-2 rounded-xl bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 text-white shadow-xs transition-all cursor-pointer select-none"
-              title="現場ヘルパー用スマートフォンの接続QRコードを表示"
-            >
-              <QrCode className="w-3.5 h-3.5" />
-              <span>スマホ連携 (QR)</span>
-            </button>
 
             <div className="flex items-center gap-1 bg-slate-150 p-1 rounded-xl border border-slate-200 selection:bg-transparent shadow-xs">
               <button
@@ -941,7 +959,7 @@ export default function App() {
                   freeStickers={freeStickers}
                   onUpdateFreeStickers={setFreeStickers}
                   reports={reports}
-                  onUpdateReports={setReports}
+                  onUpdateReports={handleUpdateReports}
                 />
               </div>
             )}
@@ -951,7 +969,7 @@ export default function App() {
               <ExtraordinaryReportTab
                 clients={clients}
                 reports={reports}
-                onUpdateReports={setReports}
+                onUpdateReports={handleUpdateReports}
                 settings={settings}
                 isLocked={isAdminLocked}
               />
@@ -992,7 +1010,7 @@ export default function App() {
             onDateChange={setSelectedDate}
             onToggleCheck={handleToggleCheck}
             reports={reports}
-            onUpdateReports={setReports}
+            onUpdateReports={handleUpdateReports}
             freeStickers={freeStickers}
             onUpdateActivities={setActivities}
             syncStatus={syncStatus}
@@ -1000,14 +1018,6 @@ export default function App() {
           />
         </main>
       )}
-
-      {/* QR Code Modal for Smartphone Device Connection */}
-      <QRCodeModal
-        isOpen={showQrModal}
-        onClose={() => setShowQrModal(false)}
-        selectedDate={selectedDate}
-        syncStatus={syncStatus}
-      />
 
       <footer className="text-center py-8 text-[11px] text-slate-400 border-t border-slate-200 mt-12">
         <p>© 介護活動・予定表連動システム - デイサービス & ヘルパーステーション連携</p>
