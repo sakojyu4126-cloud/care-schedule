@@ -34,7 +34,11 @@ import {
   Upload,
   Database,
   FileCode,
-  FileJson
+  FileJson,
+  QrCode,
+  X,
+  Copy,
+  Check
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -171,6 +175,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<"activities" | "clients" | "settings" | "reports">("activities");
   const [isAdminLocked, setIsAdminLocked] = useState(true);
   const [externalAddTrigger, setExternalAddTrigger] = useState(0);
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [copiedUrl, setCopiedUrl] = useState(false);
 
   // 1.5. Server Synchronization State
   const [clientId] = useState(() => {
@@ -186,8 +192,6 @@ export default function App() {
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error" | "offline">("synced");
   const isApplyingServerSync = React.useRef(false);
   const isInitialSyncDone = React.useRef(false);
-  const [showSyncPrompt, setShowSyncPrompt] = useState(false);
-  const [pendingServerData, setPendingServerData] = useState<any>(null);
 
   const markHasUserData = () => {
     localStorage.setItem("has_user_data", "true");
@@ -286,19 +290,25 @@ export default function App() {
         const data = await res.json();
         if (!active) return;
 
-        if (data.success) {
-          if (data.hasData) {
-            if (data.updatedAt > lastSyncTime) {
-              if (data.lastUpdatedBy === clientId) {
-                setLastSyncTime(data.updatedAt);
-                setSyncStatus("synced");
-              } else {
-                setPendingServerData(data);
-                setShowSyncPrompt(true);
-              }
-            } else {
-              setSyncStatus("synced");
+        if (data.success && data.hasData) {
+          if (data.updatedAt > lastSyncTime) {
+            if (data.lastUpdatedBy !== clientId) {
+              // Seamless silent background update without disturbing user with prompts
+              isApplyingServerSync.current = true;
+              if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
+              if (Array.isArray(data.activities)) setActivities(data.activities);
+              if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
+              if (Array.isArray(data.reports)) setReports(data.reports);
+              if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
+              setTimeout(() => {
+                isApplyingServerSync.current = false;
+              }, 300);
             }
+            setLastSyncTime(data.updatedAt);
+            localStorage.setItem("care_last_sync_time", String(data.updatedAt));
+            setSyncStatus("synced");
+          } else {
+            setSyncStatus("synced");
           }
         }
       } catch (err) {
@@ -313,25 +323,6 @@ export default function App() {
       clearInterval(interval);
     };
   }, [lastSyncTime, clientId]);
-
-  const handleApplyServerData = () => {
-    if (!pendingServerData) return;
-    isApplyingServerSync.current = true;
-    if (pendingServerData.clients) setClients(pendingServerData.clients);
-    if (pendingServerData.activities) setActivities(pendingServerData.activities);
-    if (pendingServerData.settings) handleUpdateSettings(pendingServerData.settings);
-    if (pendingServerData.reports) setReports(pendingServerData.reports);
-    if (pendingServerData.freeStickers) setFreeStickers(pendingServerData.freeStickers);
-    
-    setLastSyncTime(pendingServerData.updatedAt);
-    setSyncStatus("synced");
-    setShowSyncPrompt(false);
-    setPendingServerData(null);
-    
-    setTimeout(() => {
-      isApplyingServerSync.current = false;
-    }, 100);
-  };
 
   const handleExportBackup = () => {
     const data = {
@@ -538,51 +529,62 @@ export default function App() {
       
       {/* Main Header */}
       <header className="bg-white border-b border-slate-200/80 shadow-xs sticky top-0 z-30">
-        <div className="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className={`max-w-7xl mx-auto px-3 sm:px-4 ${isMobileMode ? "py-2" : "py-3"} flex items-center justify-between gap-2`}>
           
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-3">
-              <div className="bg-slate-900 text-white p-2.5 rounded-xl shadow-sm flex items-center justify-center">
-                <Calendar className="w-5 h-5 text-indigo-400" />
-              </div>
-              <div>
-                <h1 className="text-xl font-black tracking-tight text-slate-900">
-                  介護サービス管理
-                </h1>
-              </div>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className={`bg-slate-900 text-white ${isMobileMode ? "p-1.5 rounded-lg" : "p-2.5 rounded-xl"} shadow-sm flex items-center justify-center shrink-0`}>
+              <Calendar className={`${isMobileMode ? "w-4 h-4" : "w-5 h-5"} text-indigo-400`} />
+            </div>
+            <div>
+              <h1 className={`${isMobileMode ? "text-xs sm:text-sm font-bold text-slate-700" : "text-xl font-black tracking-tight text-slate-900"} select-none`}>
+                介護サービス管理
+              </h1>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <button
-              onClick={() => window.location.href = "/api/export-zip"}
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 transition-all cursor-pointer shadow-3xs"
-              title="全ソースコードをZIP形式でダウンロードします"
-            >
-              <FileCode className="w-3.5 h-3.5 text-purple-600" />
-              <span>ソースコードZIP</span>
-            </button>
-            <button
-              onClick={handleExportBackup}
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 transition-all cursor-pointer shadow-3xs"
-              title="全データをJSONファイルとして保存します"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span>データ保存 (JSON)</span>
-            </button>
-            <label
-              className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 transition-all cursor-pointer shadow-3xs"
-              title="保存したJSONファイルを読み込み復元します"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>データ復元</span>
-              <input
-                type="file"
-                accept=".json"
-                onChange={handleImportBackup}
-                className="hidden"
-              />
-            </label>
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            {/* Management buttons: Only display on PC management screen, hidden on mobile */}
+            {!isMobileMode && (
+              <>
+                <button
+                  onClick={() => setShowQrModal(true)}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200/80 transition-all cursor-pointer shadow-3xs"
+                  title="スマホで単独全画面表示するためのQRコードと直接URLを表示します"
+                >
+                  <QrCode className="w-3.5 h-3.5 text-blue-600" />
+                  <span>スマホ用QR</span>
+                </button>
+                <button
+                  onClick={() => window.location.href = "/api/export-zip"}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 transition-all cursor-pointer shadow-3xs"
+                  title="全ソースコードをZIP形式でダウンロードします"
+                >
+                  <FileCode className="w-3.5 h-3.5 text-purple-600" />
+                  <span>ソースコードZIP</span>
+                </button>
+                <button
+                  onClick={handleExportBackup}
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 transition-all cursor-pointer shadow-3xs"
+                  title="全データをJSONファイルとして保存します"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>データ保存 (JSON)</span>
+                </button>
+                <label
+                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 transition-all cursor-pointer shadow-3xs"
+                  title="保存したJSONファイルを読み込み復元します"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>データ復元</span>
+                  <input
+                    type="file"
+                    accept=".json"
+                    onChange={handleImportBackup}
+                    className="hidden"
+                  />
+                </label>
+              </>
+            )}
 
             <div className="flex items-center gap-1 bg-slate-150 p-1 rounded-xl border border-slate-200 selection:bg-transparent shadow-xs">
               <button
@@ -590,7 +592,7 @@ export default function App() {
                   setIsMobileMode(false);
                   setActiveTab("activities");
                 }}
-                className={`flex items-center gap-1.5 text-xs font-bold px-3.5 py-1.5 rounded-lg cursor-pointer transition-all ${
+                className={`flex items-center gap-1.5 ${isMobileMode ? "text-[11px] px-2.5 py-1" : "text-xs px-3.5 py-1.5"} font-bold rounded-lg cursor-pointer transition-all ${
                   !isMobileMode
                     ? "bg-slate-900 text-white shadow-xs border border-slate-900"
                     : "text-slate-600 hover:bg-slate-200/70"
@@ -601,7 +603,7 @@ export default function App() {
               </button>
               <button
                 onClick={() => setIsMobileMode(true)}
-                className={`flex items-center gap-1.5 text-xs font-bold px-3.5 py-1.5 rounded-lg cursor-pointer transition-all ${
+                className={`flex items-center gap-1.5 ${isMobileMode ? "text-[11px] px-2.5 py-1" : "text-xs px-3.5 py-1.5"} font-bold rounded-lg cursor-pointer transition-all ${
                   isMobileMode
                     ? "bg-[#ec4899] text-white shadow-sm border border-pink-600 font-extrabold"
                     : "text-pink-600 hover:bg-pink-50 font-bold"
@@ -615,37 +617,6 @@ export default function App() {
 
         </div>
       </header>
-
-      {/* Sync Prompt Banner */}
-      <AnimatePresence>
-        {showSyncPrompt && (
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            className="bg-indigo-600 text-white py-3 px-4 shadow-lg sticky top-[65px] z-40 flex flex-col md:flex-row items-center justify-between gap-3 text-sm font-medium"
-          >
-            <div className="flex items-center gap-2">
-              <RefreshCw className="w-4 h-4 animate-spin text-indigo-200" />
-              <span>別の端末でデータが更新されました。最新データを反映しますか？</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleApplyServerData}
-                className="bg-white text-indigo-700 hover:bg-slate-100 font-bold px-4 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-              >
-                最新データを反映
-              </button>
-              <button
-                onClick={() => setShowSyncPrompt(false)}
-                className="bg-indigo-700/50 hover:bg-indigo-800/50 text-white font-medium px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
-              >
-                現在の状態で維持
-              </button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* PC Admin View Layout */}
       {!isMobileMode ? (
@@ -886,6 +857,90 @@ export default function App() {
       <footer className="text-center py-8 text-[11px] text-slate-400 border-t border-slate-200 mt-12">
         <p>© 介護活動・予定表連動システム - デイサービス & ヘルパーステーション連携</p>
       </footer>
+
+      {/* Standalone Direct Mobile App QR Modal */}
+      {showQrModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">スマホ用 直接起動QRコード</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Google AI Studio枠なしで単独起動</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowQrModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-col items-center justify-center py-2 space-y-3">
+              <div className="p-3 bg-white border-2 border-indigo-100 rounded-2xl shadow-inner">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(typeof window !== "undefined" ? window.location.origin : "")}`}
+                  alt="スマホ用QRコード"
+                  className="w-48 h-48 rounded-lg"
+                />
+              </div>
+              <p className="text-xs font-bold text-slate-700 text-center">
+                スマホのカメラでスキャンして開いてください
+              </p>
+            </div>
+
+            {/* Direct URL Box */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-3 space-y-2">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">直接アクセスURL</span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  readOnly
+                  value={typeof window !== "undefined" ? window.location.origin : ""}
+                  className="flex-1 text-xs bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-mono truncate select-all"
+                />
+                <button
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      navigator.clipboard.writeText(window.location.origin);
+                      setCopiedUrl(true);
+                      setTimeout(() => setCopiedUrl(false), 2000);
+                    }
+                  }}
+                  className={`flex items-center gap-1 text-xs font-black px-3 py-2 rounded-xl transition-all cursor-pointer shrink-0 ${
+                    copiedUrl
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-800 hover:bg-slate-900 text-white"
+                  }`}
+                >
+                  {copiedUrl ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedUrl ? "コピー済" : "コピー"}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-3 text-[11px] text-amber-900 space-y-1">
+              <p className="font-bold">💡 画面下部のチャット枠を出さずに使うヒント：</p>
+              <p className="text-amber-800 leading-relaxed">
+                上記の直接URLをスマホのブラウザ（SafariやChrome）で開き、ブラウザメニューから<strong>「ホーム画面に追加」</strong>すると、通常のスマホアプリと同様に全画面で快適に操作できます。
+              </p>
+            </div>
+
+            <div className="pt-1">
+              <button
+                onClick={() => setShowQrModal(false)}
+                className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

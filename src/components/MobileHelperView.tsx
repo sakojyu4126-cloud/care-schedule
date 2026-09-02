@@ -8,7 +8,7 @@ import { DailyActivity, AppSettings, Client, ExtraordinaryReport, FreeSticker } 
 import { CheckCircle2, Circle, Search, Pill, MessageSquare, AlertCircle, Sparkles, Calendar, PlusCircle, History } from "lucide-react";
 import MobileReportForm from "./MobileReportForm";
 import { MedicineSticker } from "./DailyActivityTable";
-import { formatTimeHHMM, parseTimeToMinutes, extractDailyActivities, getWingFromRoom, mergeActivitiesWithReports, getShortenedServiceCode, normalizeHelperName, resolveHelperRoutesForDate, isInvalidHelperName } from "../utils/scheduler";
+import { formatTimeHHMM, parseTimeToMinutes, extractDailyActivities, getWingFromRoom, mergeActivitiesWithReports, getShortenedServiceCode, normalizeHelperName, resolveHelperRoutesForDate, isInvalidHelperName, getTodayDateString, normalizeDateStr } from "../utils/scheduler";
 
 interface MobileHelperViewProps {
   activities: DailyActivity[];
@@ -288,10 +288,10 @@ export default function MobileHelperView({
     ...resolvedHelperRoutes.map(r => normalizeHelperName(r.name))
   ].filter(name => name && name !== "未割り当て" && name !== "" && !isInvalidHelperName(name))));
 
-  // Merge extraordinary reports into activities for mobile display
+  // On mobile view, keep schedule clean by displaying only the regular activity schedule (temporary reports are logged via the report form and viewed on PC)
   const effectiveActivities = React.useMemo(() => {
-    return mergeActivitiesWithReports(activities, reports, selectedDate, settings, clients);
-  }, [activities, reports, selectedDate, settings, clients]);
+    return activities.filter(act => act.date === selectedDate || normalizeDateStr(act.date) === normalizeDateStr(selectedDate));
+  }, [activities, selectedDate]);
 
   // Filter activities based on selected helper name, selected date & search query with break deduplication
   const filteredActivities = React.useMemo(() => {
@@ -476,15 +476,15 @@ export default function MobileHelperView({
     return "bg-[#33ffff] border-[#0891b2] text-slate-950";
   };
 
-  // Gather helper individual instructions for selected caregiver or all if "All"
+  // Gather helper individual instructions ONLY when a specific caregiver is selected (hidden when "全体" is selected)
   const instructionsToDisplay = React.useMemo(() => {
+    if (selectedHelper === "All") {
+      return []; // Do not display on overall activity view
+    }
+
     const baseList = effectiveActivities.filter(act => {
       return act.date === selectedDate && act.helperInstruction && act.helperInstruction.trim() !== "";
     });
-
-    if (selectedHelper === "All") {
-      return baseList;
-    }
 
     return baseList.filter(act => {
       if (act.route === selectedHelper) return true;
@@ -504,31 +504,47 @@ export default function MobileHelperView({
     <div className="max-w-md mx-auto bg-slate-100 min-h-screen pb-24 font-sans antialiased text-slate-900 selection:bg-indigo-100">
       
       {/* Mobile Top Header */}
-      <div className="bg-white border-b border-slate-200 px-4 py-3.5 shadow-xs sticky top-0 z-20">
+      <div className="bg-white border-b border-slate-200 px-3 sm:px-4 py-2.5 shadow-xs sticky top-0 z-20">
         {activeMobileView === "schedule" ? (
-          /* Date Selector */
-          <div className="flex items-center justify-between bg-slate-50 rounded-xl p-1.5 border border-slate-200/80 relative">
+          /* High-Visibility Dark Blue Date Selector */
+          <div className="bg-[#1e40af] text-white rounded-2xl p-2 sm:p-2.5 shadow-md flex items-center justify-between gap-1.5 relative select-none">
             <button
+              type="button"
               onClick={() => handleShiftDate(-1)}
-              className="px-3 py-1 hover:bg-slate-200/50 active:bg-slate-250 rounded-lg text-slate-800 transition-colors cursor-pointer font-black select-none text-base"
+              className="h-9 w-9 flex items-center justify-center hover:bg-white/20 active:bg-white/30 rounded-xl text-white transition-all cursor-pointer font-black text-lg shrink-0 touch-manipulation active:scale-90"
+              title="前日へ"
             >
               ◀
             </button>
             
             <button 
+              type="button"
               onClick={handleCalendarClick}
-              className="flex items-center gap-2 hover:bg-slate-200/50 px-3 py-1.5 rounded-lg transition-all relative cursor-pointer notranslate"
+              className="flex-1 flex items-center justify-center gap-1.5 hover:bg-white/15 active:bg-white/25 py-1 px-2 rounded-xl transition-all cursor-pointer notranslate touch-manipulation"
               translate="no"
             >
-              <Calendar className="w-4 h-4 text-[#ec4899] shrink-0" />
-              <span className="text-sm font-black text-slate-900 tracking-tight select-none">
-                {selectedDate.replace(/-/g, "/")} <span className="text-xs font-bold text-slate-500">{getJapaneseDayOfWeek(selectedDate)}</span>
-              </span>
+              <Calendar className="w-5 h-5 text-white/80 shrink-0" />
+              <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                <span className="text-base sm:text-lg font-black tracking-tight text-white drop-shadow-xs">
+                  {(() => {
+                    const parts = selectedDate.split("-");
+                    if (parts.length === 3) {
+                      return `${parts[0]}年${parseInt(parts[1], 10)}月${parseInt(parts[2], 10)}日`;
+                    }
+                    return selectedDate;
+                  })()}
+                </span>
+                <span className="text-base sm:text-lg font-black text-white">
+                  {getJapaneseDayOfWeek(selectedDate)}
+                </span>
+              </div>
             </button>
             
             <button
+              type="button"
               onClick={() => handleShiftDate(1)}
-              className="px-3 py-1 hover:bg-slate-200/50 active:bg-slate-250 rounded-lg text-slate-800 transition-colors cursor-pointer font-black select-none text-base"
+              className="h-9 w-9 flex items-center justify-center hover:bg-white/20 active:bg-white/30 rounded-xl text-white transition-all cursor-pointer font-black text-lg shrink-0 touch-manipulation active:scale-90"
+              title="翌日へ"
             >
               ▶
             </button>
@@ -540,26 +556,28 @@ export default function MobileHelperView({
                 
                 {/* Small Calendar Dropdown Popover */}
                 <div 
-                  className="absolute top-full left-1/2 -translate-x-1/2 mt-2.5 z-40 bg-white rounded-2xl shadow-xl w-[280px] overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-top-2 duration-150"
+                  className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-40 bg-white rounded-2xl shadow-2xl w-[290px] overflow-hidden border border-slate-200 animate-in fade-in slide-in-from-top-2 duration-150"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* Caret pointing up */}
-                  <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-50 border-t border-l border-slate-200 rotate-45 z-50" />
+                  <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-slate-900 rotate-45 z-50" />
                   
                   {/* Calendar Header */}
-                  <div className="flex items-center justify-between bg-slate-50 border-b border-slate-100 p-3 relative z-10">
+                  <div className="flex items-center justify-between bg-slate-900 text-white p-3 relative z-10">
                     <button
+                      type="button"
                       onClick={() => handleCalendarMonthShift(-1)}
-                      className="p-1 hover:bg-slate-200/60 rounded-lg text-slate-700 transition-colors font-bold select-none cursor-pointer text-xs"
+                      className="p-1 hover:bg-white/20 rounded-lg text-white transition-colors font-bold select-none cursor-pointer text-xs touch-manipulation"
                     >
                       ◀
                     </button>
-                    <span className="font-black text-slate-900 text-xs">
+                    <span className="font-black text-white text-xs">
                       {calendarYear}年 {calendarMonth + 1}月
                     </span>
                     <button
+                      type="button"
                       onClick={() => handleCalendarMonthShift(1)}
-                      className="p-1 hover:bg-slate-200/60 rounded-lg text-slate-700 transition-colors font-bold select-none cursor-pointer text-xs"
+                      className="p-1 hover:bg-white/20 rounded-lg text-white transition-colors font-bold select-none cursor-pointer text-xs touch-manipulation"
                     >
                       ▶
                     </button>
@@ -586,19 +604,20 @@ export default function MobileHelperView({
                       {daysInMonthArray.map((day) => {
                         const dateString = `${calendarYear}-${String(calendarMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
                         const isSelected = dateString === selectedDate;
-                        const isToday = dateString === new Date().toISOString().split("T")[0];
+                        const isToday = dateString === getTodayDateString();
                         return (
                           <button
+                            type="button"
                             key={`day-${day}`}
                             onClick={() => {
                               onDateChange(dateString);
                               setShowCalendarModal(false);
                             }}
-                            className={`h-8 w-8 text-xs rounded-full font-black flex items-center justify-center transition-all cursor-pointer ${
+                            className={`h-8 w-8 text-xs rounded-full font-black flex items-center justify-center transition-all cursor-pointer touch-manipulation active:scale-90 ${
                               isSelected
-                                ? "bg-[#ec4899] text-white shadow-sm scale-105"
+                                ? "bg-blue-600 text-white shadow-sm scale-105"
                                 : isToday
-                                  ? "bg-slate-100 text-[#ec4899] border border-[#ec4899]/30"
+                                  ? "bg-red-50 text-red-600 border border-red-300 font-extrabold"
                                   : "text-slate-700 hover:bg-slate-100"
                             }`}
                           >
@@ -612,18 +631,19 @@ export default function MobileHelperView({
                   {/* Footer */}
                   <div className="bg-slate-50 px-3 py-2 border-t border-slate-100 flex justify-between items-center text-[11px] relative z-10">
                     <button
+                      type="button"
                       onClick={() => {
-                        const todayStr = new Date().toISOString().split("T")[0];
-                        onDateChange(todayStr);
+                        onDateChange(getTodayDateString());
                         setShowCalendarModal(false);
                       }}
-                      className="text-[#ec4899] hover:text-[#db2777] font-black cursor-pointer"
+                      className="text-blue-600 hover:text-blue-800 font-black cursor-pointer touch-manipulation"
                     >
-                      今日
+                      今日 ({getTodayDateString().replace(/-/g, "/")})
                     </button>
                     <button
+                      type="button"
                       onClick={() => setShowCalendarModal(false)}
-                      className="text-slate-500 hover:text-slate-600 font-bold cursor-pointer"
+                      className="text-slate-500 hover:text-slate-600 font-bold cursor-pointer touch-manipulation"
                     >
                       閉じる
                     </button>
@@ -647,10 +667,10 @@ export default function MobileHelperView({
           <button
             type="button"
             onClick={() => setActiveMobileView("schedule")}
-            className={`flex-1 flex items-center justify-center gap-1 text-[11px] sm:text-xs font-black py-2.5 rounded-lg cursor-pointer transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1 text-[11px] sm:text-xs font-black py-2.5 rounded-lg cursor-pointer transition-all touch-manipulation active:scale-95 ${
               activeMobileView === "schedule"
                 ? "bg-[#ec4899] text-white shadow-xs"
-                : "text-slate-500 hover:bg-slate-50"
+                : "text-slate-600 hover:bg-slate-200/60"
             }`}
           >
             <Calendar className="w-3.5 h-3.5" />
@@ -660,10 +680,10 @@ export default function MobileHelperView({
           <button
             type="button"
             onClick={() => setActiveMobileView("master")}
-            className={`flex-1 flex items-center justify-center gap-1 text-[11px] sm:text-xs font-black py-2.5 rounded-lg cursor-pointer transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1 text-[11px] sm:text-xs font-black py-2.5 rounded-lg cursor-pointer transition-all touch-manipulation active:scale-95 ${
               activeMobileView === "master"
                 ? "bg-blue-600 text-white shadow-xs"
-                : "text-slate-500 hover:bg-slate-50"
+                : "text-slate-600 hover:bg-slate-200/60"
             }`}
           >
             <History className="w-3.5 h-3.5" />
@@ -673,13 +693,13 @@ export default function MobileHelperView({
           <button
             type="button"
             onClick={() => setActiveMobileView("report")}
-            className={`flex-1 flex items-center justify-center gap-1 text-[11px] sm:text-xs font-black py-2.5 rounded-lg cursor-pointer transition-all ${
+            className={`flex-1 flex items-center justify-center gap-1 text-[11px] sm:text-xs font-black py-2.5 rounded-lg cursor-pointer transition-all touch-manipulation active:scale-95 ${
               activeMobileView === "report"
                 ? "bg-emerald-600 text-white shadow-xs"
-                : "text-slate-500 hover:bg-slate-50"
+                : "text-slate-600 hover:bg-slate-200/60"
             }`}
           >
-            <PlusCircle className="w-3.5 h-3.5 text-white shrink-0" />
+            <PlusCircle className="w-3.5 h-3.5 text-current shrink-0" />
             <span>臨時対応報告</span>
           </button>
         </div>
@@ -1319,9 +1339,16 @@ export default function MobileHelperView({
                           )}
                         </div>
                         
-                        {/* Expand status indicator */}
-                        <div className="text-slate-900/60 text-[9px] pl-1 font-black shrink-0 whitespace-nowrap">
-                          {isExpanded ? "▲" : "▼"}
+                        {/* Expand status indicator & Right shoulder badge */}
+                        <div className="flex items-center gap-1 shrink-0 ml-1">
+                          {act.helperInstruction && act.helperInstruction.trim() !== "" && (
+                            <span className="text-[9px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded shadow-2xs leading-none whitespace-nowrap animate-pulse shrink-0">
+                              ＊申送りあり
+                            </span>
+                          )}
+                          <div className="text-slate-900/60 text-[9px] pl-0.5 font-black shrink-0 whitespace-nowrap">
+                            {isExpanded ? "▲" : "▼"}
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -1351,8 +1378,15 @@ export default function MobileHelperView({
                             )}
                           </div>
                           
-                          <div className="text-slate-900/60 text-[9px] pl-1 font-black shrink-0">
-                            {isExpanded ? "▲" : "▼"}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {act.helperInstruction && act.helperInstruction.trim() !== "" && (
+                              <span className="text-[9px] font-black bg-amber-500 text-white px-1.5 py-0.5 rounded shadow-2xs leading-none whitespace-nowrap animate-pulse shrink-0">
+                                ＊申送りあり
+                              </span>
+                            )}
+                            <div className="text-slate-900/60 text-[9px] pl-0.5 font-black shrink-0">
+                              {isExpanded ? "▲" : "▼"}
+                            </div>
                           </div>
                         </div>
 
