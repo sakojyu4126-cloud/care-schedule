@@ -286,19 +286,32 @@ export default function App() {
         const data = await res.json();
         if (!active) return;
 
-        if (data.success) {
-          if (data.hasData) {
-            if (data.updatedAt > lastSyncTime) {
-              if (data.lastUpdatedBy === clientId) {
+        if (data.success && data.hasData) {
+          if (data.updatedAt > lastSyncTime) {
+            if (data.lastUpdatedBy === clientId) {
+              setLastSyncTime(data.updatedAt);
+              setSyncStatus("synced");
+            } else {
+              // On mobile, auto-apply server updates immediately so caregivers always see the exact PC schedule
+              if (isMobileMode) {
+                isApplyingServerSync.current = true;
+                if (data.clients) setClients(data.clients);
+                if (data.activities) setActivities(data.activities);
+                if (data.settings) handleUpdateSettings(data.settings);
+                if (data.reports) setReports(data.reports);
+                if (data.freeStickers) setFreeStickers(data.freeStickers);
                 setLastSyncTime(data.updatedAt);
                 setSyncStatus("synced");
+                setTimeout(() => {
+                  isApplyingServerSync.current = false;
+                }, 100);
               } else {
                 setPendingServerData(data);
                 setShowSyncPrompt(true);
               }
-            } else {
-              setSyncStatus("synced");
             }
+          } else {
+            setSyncStatus("synced");
           }
         }
       } catch (err) {
@@ -307,12 +320,20 @@ export default function App() {
       }
     };
 
-    const interval = setInterval(pollSync, 10000);
+    const interval = setInterval(pollSync, 4000);
+    const handleFocus = () => {
+      pollSync();
+    };
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleFocus);
+
     return () => {
       active = false;
       clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleFocus);
     };
-  }, [lastSyncTime, clientId]);
+  }, [lastSyncTime, clientId, isMobileMode]);
 
   const handleApplyServerData = () => {
     if (!pendingServerData) return;
