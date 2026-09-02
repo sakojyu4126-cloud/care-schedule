@@ -157,16 +157,7 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [selectedDate, setSelectedDate] = useState(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const urlDate = params.get("date");
-      if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
-        return urlDate;
-      }
-    }
-    return getTodayDateString();
-  });
+  const [selectedDate, setSelectedDate] = useState(() => getTodayDateString());
   const [isMobileMode, setIsMobileMode] = useState(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -236,26 +227,11 @@ export default function App() {
         
         if (data.success && data.hasData) {
           isApplyingServerSync.current = true;
-          if (Array.isArray(data.clients) && data.clients.length > 0) {
-            setClients(data.clients);
-            localStorage.setItem("care_clients", JSON.stringify(data.clients));
-          }
-          if (Array.isArray(data.activities)) {
-            setActivities(data.activities);
-            localStorage.setItem("care_activities", JSON.stringify(data.activities));
-          }
-          if (data.settings && typeof data.settings === "object") {
-            handleUpdateSettings(data.settings);
-            localStorage.setItem("care_settings", JSON.stringify(data.settings));
-          }
-          if (Array.isArray(data.reports)) {
-            setReports(data.reports);
-            localStorage.setItem("care_extraordinary_reports", JSON.stringify(data.reports));
-          }
-          if (Array.isArray(data.freeStickers)) {
-            setFreeStickers(data.freeStickers);
-            localStorage.setItem("care_free_stickers", JSON.stringify(data.freeStickers));
-          }
+          if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
+          if (Array.isArray(data.activities)) setActivities(data.activities);
+          if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
+          if (Array.isArray(data.reports)) setReports(data.reports);
+          if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
           
           const syncTime = data.updatedAt || Date.now();
           setLastSyncTime(syncTime);
@@ -274,7 +250,6 @@ export default function App() {
               settings,
               reports,
               freeStickers,
-              selectedDate,
               updatedAt: now,
               lastUpdatedBy: clientId
             };
@@ -303,47 +278,6 @@ export default function App() {
     fetchInitialData();
   }, []);
 
-  const handleForceRefresh = async () => {
-    try {
-      setSyncStatus("syncing");
-      const res = await fetch("/api/sync");
-      const data = await res.json();
-      if (data.success && data.hasData) {
-        isApplyingServerSync.current = true;
-        if (Array.isArray(data.clients)) {
-          setClients(data.clients);
-          localStorage.setItem("care_clients", JSON.stringify(data.clients));
-        }
-        if (Array.isArray(data.activities)) {
-          setActivities(data.activities);
-          localStorage.setItem("care_activities", JSON.stringify(data.activities));
-        }
-        if (data.settings) {
-          handleUpdateSettings(data.settings);
-          localStorage.setItem("care_settings", JSON.stringify(data.settings));
-        }
-        if (Array.isArray(data.reports)) {
-          setReports(data.reports);
-          localStorage.setItem("care_extraordinary_reports", JSON.stringify(data.reports));
-        }
-        if (Array.isArray(data.freeStickers)) {
-          setFreeStickers(data.freeStickers);
-          localStorage.setItem("care_free_stickers", JSON.stringify(data.freeStickers));
-        }
-        const syncTime = data.updatedAt || Date.now();
-        setLastSyncTime(syncTime);
-        localStorage.setItem("care_last_sync_time", String(syncTime));
-        setSyncStatus("synced");
-        setTimeout(() => {
-          isApplyingServerSync.current = false;
-        }, 150);
-      }
-    } catch (err) {
-      console.error("Manual refresh failed:", err);
-      setSyncStatus("offline");
-    }
-  };
-
   useEffect(() => {
     let active = true;
     const pollSync = async () => {
@@ -352,50 +286,19 @@ export default function App() {
         const data = await res.json();
         if (!active) return;
 
-        if (data.success && data.hasData) {
-          if (data.updatedAt > lastSyncTime) {
-            if (data.lastUpdatedBy === clientId) {
-              setLastSyncTime(data.updatedAt);
-              setSyncStatus("synced");
-            } else {
-              // Auto-merge reports into local state so mobile reports immediately show on PC without manual prompt
-              if (Array.isArray(data.reports)) {
-                setReports(data.reports);
-                localStorage.setItem("care_extraordinary_reports", JSON.stringify(data.reports));
-              }
-
-              // On mobile, auto-apply server updates immediately so caregivers always see the exact PC schedule
-              if (isMobileMode) {
-                isApplyingServerSync.current = true;
-                if (Array.isArray(data.clients)) {
-                  setClients(data.clients);
-                  localStorage.setItem("care_clients", JSON.stringify(data.clients));
-                }
-                if (Array.isArray(data.activities)) {
-                  setActivities(data.activities);
-                  localStorage.setItem("care_activities", JSON.stringify(data.activities));
-                }
-                if (data.settings) {
-                  handleUpdateSettings(data.settings);
-                  localStorage.setItem("care_settings", JSON.stringify(data.settings));
-                }
-                if (Array.isArray(data.freeStickers)) {
-                  setFreeStickers(data.freeStickers);
-                  localStorage.setItem("care_free_stickers", JSON.stringify(data.freeStickers));
-                }
+        if (data.success) {
+          if (data.hasData) {
+            if (data.updatedAt > lastSyncTime) {
+              if (data.lastUpdatedBy === clientId) {
                 setLastSyncTime(data.updatedAt);
-                localStorage.setItem("care_last_sync_time", String(data.updatedAt));
                 setSyncStatus("synced");
-                setTimeout(() => {
-                  isApplyingServerSync.current = false;
-                }, 100);
               } else {
                 setPendingServerData(data);
                 setShowSyncPrompt(true);
               }
+            } else {
+              setSyncStatus("synced");
             }
-          } else {
-            setSyncStatus("synced");
           }
         }
       } catch (err) {
@@ -404,20 +307,12 @@ export default function App() {
       }
     };
 
-    const interval = setInterval(pollSync, 3500);
-    const handleFocus = () => {
-      pollSync();
-    };
-    window.addEventListener("focus", handleFocus);
-    document.addEventListener("visibilitychange", handleFocus);
-
+    const interval = setInterval(pollSync, 10000);
     return () => {
       active = false;
       clearInterval(interval);
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleFocus);
     };
-  }, [lastSyncTime, clientId, isMobileMode]);
+  }, [lastSyncTime, clientId]);
 
   const handleApplyServerData = () => {
     if (!pendingServerData) return;
@@ -587,7 +482,6 @@ export default function App() {
           settings,
           reports,
           freeStickers,
-          selectedDate,
           updatedAt: now,
           lastUpdatedBy: clientId
         };
@@ -608,37 +502,9 @@ export default function App() {
       }
     };
 
-    const timer = setTimeout(pushData, 1000);
+    const timer = setTimeout(pushData, 3000);
     return () => clearTimeout(timer);
-  }, [clients, activities, settings, reports, freeStickers, selectedDate, clientId]);
-
-  // Instant update and sync for extraordinary reports
-  const handleUpdateReports = async (newReports: ExtraordinaryReport[]) => {
-    setReports(newReports);
-    localStorage.setItem("care_extraordinary_reports", JSON.stringify(newReports));
-    try {
-      const now = Date.now();
-      const payload = {
-        clients,
-        activities,
-        settings,
-        reports: newReports,
-        freeStickers,
-        selectedDate,
-        updatedAt: now,
-        lastUpdatedBy: clientId
-      };
-      await fetch("/api/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      setLastSyncTime(now);
-      localStorage.setItem("care_last_sync_time", String(now));
-    } catch (err) {
-      console.error("Failed to sync report immediately:", err);
-    }
-  };
+  }, [clients, activities, settings, reports, freeStickers, clientId]);
 
   // Master-to-Daily Synchronization:
   // When clients master updates (add, remove, edit weekly services), immediately sync current and future activities (today onwards).
@@ -959,7 +825,7 @@ export default function App() {
                   freeStickers={freeStickers}
                   onUpdateFreeStickers={setFreeStickers}
                   reports={reports}
-                  onUpdateReports={handleUpdateReports}
+                  onUpdateReports={setReports}
                 />
               </div>
             )}
@@ -969,7 +835,7 @@ export default function App() {
               <ExtraordinaryReportTab
                 clients={clients}
                 reports={reports}
-                onUpdateReports={handleUpdateReports}
+                onUpdateReports={setReports}
                 settings={settings}
                 isLocked={isAdminLocked}
               />
@@ -1010,11 +876,9 @@ export default function App() {
             onDateChange={setSelectedDate}
             onToggleCheck={handleToggleCheck}
             reports={reports}
-            onUpdateReports={handleUpdateReports}
+            onUpdateReports={setReports}
             freeStickers={freeStickers}
             onUpdateActivities={setActivities}
-            syncStatus={syncStatus}
-            onRefreshSync={handleForceRefresh}
           />
         </main>
       )}

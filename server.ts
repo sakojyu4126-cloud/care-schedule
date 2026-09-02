@@ -29,7 +29,6 @@ interface SyncData {
   settings: any;
   reports: any[];
   freeStickers: any[];
-  selectedDate?: string;
   updatedAt: number;
   lastUpdatedBy: string;
 }
@@ -42,7 +41,6 @@ let serverState: SyncData = {
   settings: null,
   reports: [],
   freeStickers: [],
-  selectedDate: "",
   updatedAt: 0,
   lastUpdatedBy: ""
 };
@@ -69,7 +67,6 @@ app.get("/api/sync", (req, res) => {
     settings: serverState.settings,
     reports: serverState.reports,
     freeStickers: serverState.freeStickers,
-    selectedDate: serverState.selectedDate || "",
     updatedAt: serverState.updatedAt,
     lastUpdatedBy: serverState.lastUpdatedBy || ""
   });
@@ -77,43 +74,41 @@ app.get("/api/sync", (req, res) => {
 
 app.post("/api/sync", (req, res) => {
   try {
-    const { clients, activities, settings, reports, freeStickers, selectedDate, updatedAt, lastUpdatedBy } = req.body;
+    const { clients, activities, settings, reports, freeStickers, updatedAt, lastUpdatedBy } = req.body;
     const clientTimestamp = Number(updatedAt) || 0;
 
-    // Merge incoming reports with existing server reports by ID so no mobile reports are lost
-    let mergedReports = serverState.reports || [];
-    if (Array.isArray(reports) && reports.length > 0) {
-      const existingReportIds = new Set(mergedReports.map(r => r.id));
-      const newReportsToAdd = reports.filter(r => r.id && !existingReportIds.has(r.id));
-      
-      // Update any modified existing reports
-      const updatedReports = mergedReports.map(existing => {
-        const incoming = reports.find(r => r.id === existing.id);
-        return incoming ? { ...existing, ...incoming } : existing;
+    // Safety check: Do not allow replacing production 50+ clients with legacy small/mock clients list
+    if (Array.isArray(clients) && clients.length < 50 && serverState.clients && serverState.clients.length >= 50) {
+      console.warn("Ignored sync POST with fewer clients than production master.");
+      return res.json({
+        success: true,
+        hasData: serverState.hasData,
+        updatedAt: serverState.updatedAt,
+        lastUpdatedBy: serverState.lastUpdatedBy || ""
       });
-
-      mergedReports = [...newReportsToAdd, ...updatedReports];
     }
 
-    serverState = {
-      hasData: true,
-      clients: (Array.isArray(clients) && clients.length > 0) ? clients : (serverState.clients || []),
-      activities: Array.isArray(activities) ? activities : (serverState.activities || []),
-      settings: settings || serverState.settings || null,
-      reports: mergedReports,
-      freeStickers: Array.isArray(freeStickers) ? freeStickers : (serverState.freeStickers || []),
-      selectedDate: selectedDate || serverState.selectedDate || "",
-      updatedAt: Date.now(),
-      lastUpdatedBy: lastUpdatedBy || ""
-    };
+    // Only update if server has no data, or if the client sending has a newer version,
+    // or if the client explicitly pushes an update (clientTimestamp === 0 / force override)
+    if (!serverState.hasData || clientTimestamp > serverState.updatedAt || clientTimestamp === 0) {
+      serverState = {
+        hasData: true,
+        clients: clients || [],
+        activities: activities || [],
+        settings: settings || null,
+        reports: reports || [],
+        freeStickers: freeStickers || [],
+        updatedAt: Date.now(),
+        lastUpdatedBy: lastUpdatedBy || ""
+      };
 
-    fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
-    console.log("Saved new serverState. updatedAt:", serverState.updatedAt, "by:", serverState.lastUpdatedBy, "clients:", serverState.clients.length, "reports:", serverState.reports.length);
+      fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
+      console.log("Saved new serverState. updatedAt:", serverState.updatedAt, "by:", serverState.lastUpdatedBy);
+    }
 
     res.json({
       success: true,
       hasData: serverState.hasData,
-      reports: serverState.reports,
       updatedAt: serverState.updatedAt,
       lastUpdatedBy: serverState.lastUpdatedBy || ""
     });
