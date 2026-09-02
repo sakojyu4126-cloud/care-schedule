@@ -10,7 +10,7 @@ import rawActivities from "./initialActivities.json";
 import rawReports from "./initialReports.json";
 import rawFreeStickers from "./initialFreeStickers.json";
 
-export const DATA_STORAGE_VERSION = "2026_09_02_v8_sept_active_staff_sync_master";
+export const DATA_STORAGE_VERSION = "2026_09_02_v9_live_qr_sync_fresh";
 
 export const INITIAL_SETTINGS: AppSettings = rawSettings as unknown as AppSettings;
 

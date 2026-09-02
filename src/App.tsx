@@ -339,14 +339,14 @@ export default function App() {
     const pollSync = async () => {
       try {
         const res = await fetch(`/api/sync?t=${Date.now()}`, {
-          headers: { "Cache-Control": "no-cache" }
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
         });
         const data = await res.json();
         if (!active) return;
 
         if (data.success && data.hasData) {
-          if (data.updatedAt > lastSyncTime) {
-            if (data.lastUpdatedBy !== clientId) {
+          if (data.updatedAt !== lastSyncTime) {
+            if (data.lastUpdatedBy !== clientId || isMobileMode) {
               // Seamless silent background update without disturbing user with prompts
               isApplyingServerSync.current = true;
               if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
@@ -376,7 +376,7 @@ export default function App() {
       active = false;
       clearInterval(interval);
     };
-  }, [lastSyncTime, clientId]);
+  }, [lastSyncTime, clientId, isMobileMode]);
 
   const handleExportBackup = () => {
     const data = {
@@ -515,6 +515,7 @@ export default function App() {
   useEffect(() => {
     if (!isInitialSyncDone.current) return;
     if (isApplyingServerSync.current) return;
+    if (isMobileMode) return; // Mobile helper view only reads schedules and submits reports/checks, never overwrites admin database
 
     const pushData = async () => {
       try {
@@ -548,7 +549,7 @@ export default function App() {
 
     const timer = setTimeout(pushData, 400);
     return () => clearTimeout(timer);
-  }, [clients, activities, settings, reports, freeStickers, clientId]);
+  }, [clients, activities, settings, reports, freeStickers, clientId, isMobileMode]);
 
   // Master-to-Daily Synchronization:
   // When clients master updates (add, remove, edit weekly services), immediately sync current and future activities (today onwards).
@@ -573,15 +574,30 @@ export default function App() {
   const handleToggleCheck = (id: string) => {
     setActivities(prev => {
       const exists = prev.some(act => act.id === id);
+      let nextActs: DailyActivity[];
       if (exists) {
-        return prev.map(act => act.id === id ? { ...act, isChecked: !act.isChecked } : act);
+        nextActs = prev.map(act => act.id === id ? { ...act, isChecked: !act.isChecked } : act);
+      } else {
+        const baseActs = mergeActivitiesWithReports(prev, reports, selectedDate, settings, clients);
+        const updated = baseActs.map(act => act.id === id ? { ...act, isChecked: !act.isChecked } : act);
+        nextActs = [
+          ...prev.filter(act => act.date !== selectedDate && normalizeDateStr(act.date) !== normalizeDateStr(selectedDate)),
+          ...updated
+        ];
       }
-      const baseActs = mergeActivitiesWithReports(prev, reports, selectedDate, settings, clients);
-      const updated = baseActs.map(act => act.id === id ? { ...act, isChecked: !act.isChecked } : act);
-      return [
-        ...prev.filter(act => act.date !== selectedDate && normalizeDateStr(act.date) !== normalizeDateStr(selectedDate)),
-        ...updated
-      ];
+
+      if (isMobileMode) {
+        fetch("/api/sync", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            activities: nextActs,
+            lastUpdatedBy: "mobile_check_" + clientId
+          })
+        }).catch(e => console.error("Mobile checkmark sync error:", e));
+      }
+
+      return nextActs;
     });
   };
 

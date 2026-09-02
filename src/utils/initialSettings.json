@@ -1,39 +1,39 @@
 {
-  "generalInstruction": "室温は１番館２階西側は特に暑いので設定温度を２６℃にしてください",
-  "individualInstruction": "【個別連絡】鈴木様：本日は体調不良のため、10:00の訪問時に検温と水分補給の促しを重点的に行ってください。",
+  "generalInstruction": "",
+  "individualInstruction": "",
   "adminPasswordHash": "admin",
   "helperRoutes": [
     {
       "key": "A1",
-      "name": "水田祐里子"
+      "name": "未割り当て"
     },
     {
       "key": "A2",
-      "name": "平岡美紀"
+      "name": "未割り当て"
     },
     {
       "key": "A3",
-      "name": "安田真弓"
+      "name": "未割り当て"
     },
     {
       "key": "A4",
-      "name": "松井真実"
+      "name": "未割り当て"
     },
     {
       "key": "B",
-      "name": "藤吉俊之"
+      "name": "未割り当て"
     },
     {
       "key": "C1",
-      "name": "吉田ジャッキー"
+      "name": "未割り当て"
     },
     {
       "key": "C2",
-      "name": "西條廣一"
+      "name": "未割り当て"
     },
     {
       "key": "C3",
-      "name": "長島睦枝"
+      "name": "未割り当て"
     }
   ],
   "helperMonthShifts": [
