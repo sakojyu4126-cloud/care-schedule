@@ -850,6 +850,29 @@ export default function App() {
             onUpdateReports={setReports}
             freeStickers={freeStickers}
             onUpdateActivities={setActivities}
+            onManualSync={async () => {
+              try {
+                setSyncStatus("syncing");
+                const res = await fetch("/api/sync");
+                const data = await res.json();
+                if (data.success && data.hasData) {
+                  isApplyingServerSync.current = true;
+                  if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
+                  if (Array.isArray(data.activities)) setActivities(data.activities);
+                  if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
+                  if (Array.isArray(data.reports)) setReports(data.reports);
+                  if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
+                  setLastSyncTime(data.updatedAt || Date.now());
+                  setSyncStatus("synced");
+                  setTimeout(() => {
+                    isApplyingServerSync.current = false;
+                  }, 300);
+                }
+              } catch (e) {
+                setSyncStatus("offline");
+              }
+            }}
+            syncStatus={syncStatus}
           />
         </main>
       )}
@@ -861,15 +884,15 @@ export default function App() {
       {/* Standalone Direct Mobile App QR Modal */}
       {showQrModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="p-2 bg-blue-50 text-blue-600 rounded-xl">
                   <QrCode className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-black text-slate-900 text-sm">スマホ用 直接起動QRコード</h3>
-                  <p className="text-[11px] text-slate-500 font-medium">Google AI Studio枠なしで単独起動</p>
+                  <h3 className="font-black text-slate-900 text-sm">スマホ用 リアルタイム同期QRコード</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">PCの最新データと完全連動</p>
                 </div>
               </div>
               <button
@@ -880,16 +903,28 @@ export default function App() {
               </button>
             </div>
 
-            <div className="flex flex-col items-center justify-center py-2 space-y-3">
-              <div className="p-3 bg-white border-2 border-indigo-100 rounded-2xl shadow-inner">
+            {/* Crucial Note about old Vercel URL */}
+            <div className="bg-red-50 border border-red-200/80 rounded-2xl p-3 text-[11px] text-red-950 space-y-1">
+              <p className="font-black text-red-700 flex items-center gap-1">
+                <span>⚠️</span> 過去のURL（...vercel.app 等）にご注意ください
+              </p>
+              <p className="text-red-900 leading-relaxed font-medium">
+                スマホで以前の古いVercelブックマークを開いていると、PCの最新データが反映されません。<strong>必ず下記のQRコードをスマホのカメラでスキャン</strong>して開いてください。
+              </p>
+            </div>
+
+            <div className="flex flex-col items-center justify-center py-2 space-y-2">
+              <div className="p-3 bg-white border-2 border-blue-200 rounded-2xl shadow-inner">
                 <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(typeof window !== "undefined" ? window.location.origin : "")}`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+                    typeof window !== "undefined" ? `${window.location.origin}?view=mobile` : ""
+                  )}`}
                   alt="スマホ用QRコード"
                   className="w-48 h-48 rounded-lg"
                 />
               </div>
-              <p className="text-xs font-bold text-slate-700 text-center">
-                スマホのカメラでスキャンして開いてください
+              <p className="text-xs font-black text-slate-800 text-center">
+                スマホのカメラでスキャンして開く
               </p>
             </div>
 
@@ -900,13 +935,13 @@ export default function App() {
                 <input
                   type="text"
                   readOnly
-                  value={typeof window !== "undefined" ? window.location.origin : ""}
+                  value={typeof window !== "undefined" ? `${window.location.origin}?view=mobile` : ""}
                   className="flex-1 text-xs bg-white border border-slate-200 rounded-xl px-3 py-2 text-slate-700 font-mono truncate select-all"
                 />
                 <button
                   onClick={() => {
                     if (typeof window !== "undefined") {
-                      navigator.clipboard.writeText(window.location.origin);
+                      navigator.clipboard.writeText(`${window.location.origin}?view=mobile`);
                       setCopiedUrl(true);
                       setTimeout(() => setCopiedUrl(false), 2000);
                     }
@@ -923,10 +958,10 @@ export default function App() {
               </div>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200/60 rounded-2xl p-3 text-[11px] text-amber-900 space-y-1">
-              <p className="font-bold">💡 画面下部のチャット枠を出さずに使うヒント：</p>
-              <p className="text-amber-800 leading-relaxed">
-                上記の直接URLをスマホのブラウザ（SafariやChrome）で開き、ブラウザメニューから<strong>「ホーム画面に追加」</strong>すると、通常のスマホアプリと同様に全画面で快適に操作できます。
+            <div className="bg-blue-50 border border-blue-200/60 rounded-2xl p-3 text-[11px] text-blue-950 space-y-1">
+              <p className="font-bold">💡 アプリのように全画面で使う方法：</p>
+              <p className="text-blue-900 leading-relaxed font-medium">
+                QRコードで開いた後、スマホブラウザ（SafariやChrome）のメニューから<strong>「ホーム画面に追加」</strong>すると、以降は通常のアプリのようにワンタップで最新の支援割振りを確認できます。
               </p>
             </div>
 

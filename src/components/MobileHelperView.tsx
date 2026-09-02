@@ -21,6 +21,8 @@ interface MobileHelperViewProps {
   onUpdateReports: (reports: ExtraordinaryReport[]) => void;
   freeStickers?: FreeSticker[];
   onUpdateActivities?: (newActivities: DailyActivity[]) => void;
+  onManualSync?: () => void;
+  syncStatus?: "synced" | "syncing" | "error" | "offline";
 }
 
 // Formatter to extract surname safely without trailing "様"
@@ -167,7 +169,9 @@ export default function MobileHelperView({
   reports,
   onUpdateReports,
   freeStickers = [],
-  onUpdateActivities
+  onUpdateActivities,
+  onManualSync,
+  syncStatus = "synced"
 }: MobileHelperViewProps) {
   // Local state for mobile filter - now using caregiver name instead of fixed route key
   const [selectedHelper, setSelectedHelper] = useState<string>("All"); 
@@ -1084,7 +1088,7 @@ export default function MobileHelperView({
                     {/* Columns matching 5 routes */}
                     <div className="absolute inset-0 grid divide-x divide-slate-200 z-10" style={{ gridTemplateColumns: `repeat(${visibleRoutes.length}, minmax(0, 1fr))` }}>
                       {visibleRoutes.map((rt) => {
-                        const routeActs = effectiveActivities.filter(act => act.route === rt.key && act.date === selectedDate);
+                        const routeActs = effectiveActivities.filter(act => act.route === rt.key && (act.date === selectedDate || normalizeDateStr(act.date) === normalizeDateStr(selectedDate)));
                         const isSelectedCol = selectedHelper !== "All" && (
                           selectedHelper === rt.name || 
                           selectedHelper === rt.key || 
