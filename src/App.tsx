@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Client, DailyActivity, AppSettings, CareLevel, ExtraordinaryReport, FreeSticker } from "./types";
-import { INITIAL_CLIENTS, INITIAL_SETTINGS, INITIAL_EXTRAORDINARY_REPORTS } from "./utils/dummyData";
+import { INITIAL_CLIENTS, INITIAL_SETTINGS, INITIAL_EXTRAORDINARY_REPORTS, INITIAL_ACTIVITIES, INITIAL_FREE_STICKERS, DATA_STORAGE_VERSION } from "./utils/dummyData";
 import { extractDailyActivities, getTodayDateString, syncActivitiesWithClients, updateClientInfoInActivities, cleanSettings } from "./utils/scheduler";
 import DailyActivityTable from "./components/DailyActivityTable";
 import MobileHelperView from "./components/MobileHelperView";
@@ -38,12 +38,46 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
+// Helper to perform one-time data migration from legacy mock cache to production master data
+function checkAndMigrateStorage(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const currentVer = localStorage.getItem("care_data_version");
+    const savedClientsStr = localStorage.getItem("care_clients");
+    let needsReset = currentVer !== DATA_STORAGE_VERSION;
+
+    if (!needsReset && savedClientsStr) {
+      const parsed = JSON.parse(savedClientsStr);
+      if (!Array.isArray(parsed) || parsed.length < 50 || parsed.some((c: any) => c.kanjiName === "野原 太郎" || c.kanjiName === "佐藤 健一")) {
+        needsReset = true;
+      }
+    }
+
+    if (needsReset) {
+      console.log("Migrating local storage to production master data version:", DATA_STORAGE_VERSION);
+      localStorage.setItem("care_data_version", DATA_STORAGE_VERSION);
+      localStorage.setItem("care_clients", JSON.stringify(INITIAL_CLIENTS));
+      localStorage.setItem("care_activities", JSON.stringify(INITIAL_ACTIVITIES));
+      localStorage.setItem("care_settings", JSON.stringify(cleanSettings(INITIAL_SETTINGS)));
+      localStorage.setItem("care_extraordinary_reports", JSON.stringify(INITIAL_EXTRAORDINARY_REPORTS));
+      localStorage.setItem("care_free_stickers", JSON.stringify(INITIAL_FREE_STICKERS));
+      localStorage.setItem("has_user_data", "true");
+      return true;
+    }
+  } catch (e) {
+    console.error("Migration check error:", e);
+  }
+  return false;
+}
+
 export default function App() {
   // 1. Core State
   const [clients, setClients] = useState<Client[]>(() => {
+    checkAndMigrateStorage();
     const saved = localStorage.getItem("care_clients");
     const list: Client[] = saved ? JSON.parse(saved) : INITIAL_CLIENTS;
-    return list.map(c => {
+    const effectiveList = Array.isArray(list) && list.length >= 50 ? list : INITIAL_CLIENTS;
+    return effectiveList.map(c => {
       let kn = c.kanjiName.trim();
       if (kn.endsWith("様")) kn = kn.slice(0, -1).trim();
       let nn = c.nickname ? c.nickname.trim() : "";
@@ -53,8 +87,10 @@ export default function App() {
   });
 
   const [activities, setActivities] = useState<DailyActivity[]>(() => {
+    checkAndMigrateStorage();
     const savedClients = localStorage.getItem("care_clients");
     const cList: Client[] = savedClients ? JSON.parse(savedClients) : INITIAL_CLIENTS;
+    const effectiveClients = Array.isArray(cList) && cList.length >= 50 ? cList : INITIAL_CLIENTS;
     const savedSettings = localStorage.getItem("care_settings");
     const sObj: AppSettings = savedSettings ? JSON.parse(savedSettings) : INITIAL_SETTINGS;
 
@@ -65,20 +101,23 @@ export default function App() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           const clientActsToday = parsed.filter((a: DailyActivity) => a.date === getTodayDateString() && a.clientId !== null);
           if (clientActsToday.length === 0) {
-            const todayActs = extractDailyActivities(getTodayDateString(), cList, sObj);
+            const todayActs = extractDailyActivities(getTodayDateString(), effectiveClients, sObj);
             const withoutToday = parsed.filter((a: DailyActivity) => a.date !== getTodayDateString());
             return [...withoutToday, ...todayActs];
           }
-          return updateClientInfoInActivities(parsed, cList);
+          return updateClientInfoInActivities(parsed, effectiveClients);
         }
       } catch (e) {
         // fallback
       }
     }
-    return extractDailyActivities(getTodayDateString(), cList, sObj);
+    return INITIAL_ACTIVITIES && INITIAL_ACTIVITIES.length > 0
+      ? INITIAL_ACTIVITIES
+      : extractDailyActivities(getTodayDateString(), effectiveClients, sObj);
   });
 
   const [settings, setSettings] = useState<AppSettings>(() => {
+    checkAndMigrateStorage();
     const saved = localStorage.getItem("care_settings");
     if (saved) {
       try {
@@ -545,14 +584,16 @@ export default function App() {
               />
             </label>
 
-            <div className="flex items-center gap-1 bg-slate-150 p-1 rounded-xl border border-slate-200 selection:bg-transparent">
+            <div className="flex items-center gap-1 bg-slate-150 p-1 rounded-xl border border-slate-200 selection:bg-transparent shadow-xs">
               <button
                 onClick={() => {
                   setIsMobileMode(false);
                   setActiveTab("activities");
                 }}
                 className={`flex items-center gap-1.5 text-xs font-bold px-3.5 py-1.5 rounded-lg cursor-pointer transition-all ${
-                  !isMobileMode ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:bg-slate-100/50"
+                  !isMobileMode
+                    ? "bg-slate-900 text-white shadow-xs border border-slate-900"
+                    : "text-slate-600 hover:bg-slate-200/70"
                 }`}
               >
                 <Laptop className="w-3.5 h-3.5" />
@@ -561,10 +602,12 @@ export default function App() {
               <button
                 onClick={() => setIsMobileMode(true)}
                 className={`flex items-center gap-1.5 text-xs font-bold px-3.5 py-1.5 rounded-lg cursor-pointer transition-all ${
-                  isMobileMode ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:bg-slate-100/50"
+                  isMobileMode
+                    ? "bg-[#ec4899] text-white shadow-sm border border-pink-600 font-extrabold"
+                    : "text-pink-600 hover:bg-pink-50 font-bold"
                 }`}
               >
-                <Smartphone className="w-3.5 h-3.5" />
+                <Smartphone className="w-3.5 h-3.5 text-current" />
                 <span>スマホ表示</span>
               </button>
             </div>

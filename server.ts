@@ -77,6 +77,17 @@ app.post("/api/sync", (req, res) => {
     const { clients, activities, settings, reports, freeStickers, updatedAt, lastUpdatedBy } = req.body;
     const clientTimestamp = Number(updatedAt) || 0;
 
+    // Safety check: Do not allow replacing production 50+ clients with legacy small/mock clients list
+    if (Array.isArray(clients) && clients.length < 50 && serverState.clients && serverState.clients.length >= 50) {
+      console.warn("Ignored sync POST with fewer clients than production master.");
+      return res.json({
+        success: true,
+        hasData: serverState.hasData,
+        updatedAt: serverState.updatedAt,
+        lastUpdatedBy: serverState.lastUpdatedBy || ""
+      });
+    }
+
     // Only update if server has no data, or if the client sending has a newer version,
     // or if the client explicitly pushes an update (clientTimestamp === 0 / force override)
     if (!serverState.hasData || clientTimestamp > serverState.updatedAt || clientTimestamp === 0) {

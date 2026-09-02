@@ -3,7 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Client, CareLevel, AppSettings, ExtraordinaryReport } from "../types";
+import { Client, CareLevel, AppSettings, ExtraordinaryReport, DailyActivity, FreeSticker } from "../types";
+import rawActivities from "./initialActivities.json";
+
+export const DATA_STORAGE_VERSION = "2026_09_02_v3_production";
 
 export const INITIAL_SETTINGS: AppSettings = {
   "generalInstruction": "室温は１番館２階西側は特に暑いので設定温度を２６℃にしてください",
@@ -16,7 +19,7 @@ export const INITIAL_SETTINGS: AppSettings = {
     },
     {
       "key": "A2",
-      "name": "吉田J"
+      "name": "吉田ジャッキー"
     },
     {
       "key": "A3",
@@ -40,7 +43,7 @@ export const INITIAL_SETTINGS: AppSettings = {
     },
     {
       "key": "C3",
-      "name": "吉田J"
+      "name": "吉田ジャッキー"
     }
   ],
   "helperMonthShifts": [
@@ -156,7 +159,7 @@ export const INITIAL_SETTINGS: AppSettings = {
           ]
         },
         {
-          "helperName": "吉田ｼﾞｬｯｷｰ",
+          "helperName": "吉田ジャッキー",
           "shifts": [
             "A",
             "/",
@@ -869,7 +872,7 @@ export const INITIAL_SETTINGS: AppSettings = {
       },
       {
         "key": "A3",
-        "name": "安田眞弓"
+        "name": "安田真弓"
       },
       {
         "key": "A4",
@@ -881,7 +884,7 @@ export const INITIAL_SETTINGS: AppSettings = {
       },
       {
         "key": "C1",
-        "name": "吉田J"
+        "name": "吉田ジャッキー"
       },
       {
         "key": "C2",
@@ -903,7 +906,7 @@ export const INITIAL_SETTINGS: AppSettings = {
       },
       {
         "key": "A3",
-        "name": "安田眞弓"
+        "name": "安田真弓"
       },
       {
         "key": "A4",
@@ -915,7 +918,7 @@ export const INITIAL_SETTINGS: AppSettings = {
       },
       {
         "key": "C1",
-        "name": "吉田J"
+        "name": "吉田ジャッキー"
       },
       {
         "key": "C2",
@@ -929,7 +932,7 @@ export const INITIAL_SETTINGS: AppSettings = {
     "2026-07-01": [
       {
         "key": "A1",
-        "name": "吉田J"
+        "name": "吉田ジャッキー"
       },
       {
         "key": "A2",
@@ -9068,6 +9071,8 @@ export const INITIAL_CLIENTS: Client[] = (RAW_INITIAL_CLIENTS as any[]).map(c =>
   };
 });
 
+export const INITIAL_ACTIVITIES: DailyActivity[] = rawActivities as DailyActivity[];
+
 export const INITIAL_EXTRAORDINARY_REPORTS: ExtraordinaryReport[] = [
   {
     "id": "rep-1785573617789",
@@ -9969,3 +9974,5 @@ export const INITIAL_EXTRAORDINARY_REPORTS: ExtraordinaryReport[] = [
     "route": "A4"
   }
 ];
+
+export const INITIAL_FREE_STICKERS: FreeSticker[] = [];
