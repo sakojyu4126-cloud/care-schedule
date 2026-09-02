@@ -119,7 +119,16 @@ export default function App() {
   });
 
   const [selectedDate, setSelectedDate] = useState(() => getTodayDateString());
-  const [isMobileMode, setIsMobileMode] = useState(false);
+  const [isMobileMode, setIsMobileMode] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("view") === "mobile" || params.get("mode") === "mobile") {
+        return true;
+      }
+      return window.innerWidth <= 768;
+    }
+    return false;
+  });
   const [activeTab, setActiveTab] = useState<"activities" | "clients" | "settings" | "reports">("activities");
   const [isAdminLocked, setIsAdminLocked] = useState(true);
   const [externalAddTrigger, setExternalAddTrigger] = useState(0);
