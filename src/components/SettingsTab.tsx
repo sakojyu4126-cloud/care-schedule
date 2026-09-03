@@ -5,7 +5,7 @@
 
 import React, { useState } from "react";
 import { AppSettings, Client, CareLevel, HelperShiftRow, HelperMonthShift } from "../types";
-import { Lock, Unlock, Database, Sparkles, RefreshCw, AlertCircle, CheckCircle2, ShieldAlert, FileSpreadsheet, Trash2, Eye, EyeOff, Users, Plus, X, Upload, FileUp, Download, FileCode, FolderArchive } from "lucide-react";
+import { Lock, Unlock, Database, Sparkles, RefreshCw, AlertCircle, CheckCircle2, ShieldAlert, FileSpreadsheet, Trash2, Eye, EyeOff, Users, Plus, X, Upload, FileUp, Download, FileCode, FolderArchive, Loader2 } from "lucide-react";
 import { motion } from "motion/react";
 import { INITIAL_CLIENTS } from "../utils/dummyData";
 import { normalizeHelperName, isInvalidHelperName, cleanSettings } from "../utils/scheduler";
@@ -20,6 +20,8 @@ interface SettingsTabProps {
   onSetLock: (lock: boolean) => void;
   onExportBackup?: () => void;
   onImportBackup?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  activitiesCount?: number;
+  datesCount?: number;
 }
 
 export default function SettingsTab({
@@ -30,7 +32,9 @@ export default function SettingsTab({
   isLocked,
   onSetLock,
   onExportBackup,
-  onImportBackup
+  onImportBackup,
+  activitiesCount,
+  datesCount
 }: SettingsTabProps) {
   const [passwordInput, setPasswordInput] = useState("");
   const [lockError, setLockError] = useState("");
@@ -52,6 +56,33 @@ export default function SettingsTab({
     const next = !showUnitTables;
     setShowUnitTables(next);
     localStorage.setItem("show_unit_tables", String(next));
+  };
+
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+
+  const handleDownloadZip = async () => {
+    setIsDownloadingZip(true);
+    try {
+      const res = await fetch("/api/export-zip");
+      if (!res.ok) {
+        throw new Error(`サーバーレスポンス: ${res.status}`);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      const today = new Date().toISOString().split("T")[0];
+      a.href = url;
+      a.download = `care_app_source_code_${today}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch (err: any) {
+      console.warn("ZIP download via fetch failed, falling back to direct navigation:", err);
+      window.location.href = "/api/export-zip";
+    } finally {
+      setIsDownloadingZip(false);
+    }
   };
 
   // Prevent browser default behavior when files are dropped outside of specific dropzones
@@ -673,47 +704,76 @@ export default function SettingsTab({
       </div>
 
       {/* Backup & Restore Card */}
-      <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-xs space-y-4">
-        <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1.5">
-          <Database className="w-4 h-4 text-indigo-600" />
-          <span>全データのバックアップと復元・完全ソースコード出力</span>
-        </h3>
-        <p className="text-xs text-slate-500 leading-relaxed">
-          アプリの修正や更新作業の前に、現在の全データ（利用者マスタ、週間予定、毎日の活動表、設定）を保存するか、システム全体の完全なソースコード（全ファイル）をZIPアーカイブとしてダウンロードできます。
-        </p>
+      <div className="bg-gradient-to-br from-white via-indigo-50/20 to-purple-50/20 p-5 rounded-2xl border border-indigo-150 shadow-xs space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100/80 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
+              <Database className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
+                <span>全データの完全保存・復元 ＆ ソースコードZIP出力</span>
+              </h3>
+              <p className="text-[11px] text-slate-500">
+                7月以降の全期間データ（利用者マスタ、全活動記録、臨時報告、シフト配置）を安全にバックアップ・復元できます
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="bg-white border border-slate-200 text-slate-700 px-2.5 py-1 rounded-full font-bold shadow-3xs">
+              👥 利用者: {clients.length}名
+            </span>
+            <span className="bg-white border border-slate-200 text-indigo-700 px-2.5 py-1 rounded-full font-bold shadow-3xs">
+              📅 スケジュール: {datesCount ? `${datesCount}日分` : "全期間"} {activitiesCount ? `(${activitiesCount}件)` : ""}
+            </span>
+            <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-1 rounded-full font-bold shadow-3xs flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              Firebase連携
+            </span>
+          </div>
+        </div>
 
         <div className="flex flex-wrap items-center gap-3 pt-1">
-          <button
-            onClick={() => window.location.href = "/api/export-zip"}
-            className="flex items-center gap-2 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 px-4 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs"
-            title="完全なソースコード（HTML, CSS, TypeScript, Server, package.json等全ファイル）をZIP形式でダウンロードします"
-          >
-            <FolderArchive className="w-4 h-4" />
-            <span>完全ソースコードをZIPダウンロード (.zip)</span>
-          </button>
-
           {onExportBackup && (
             <button
               onClick={onExportBackup}
-              className="flex items-center gap-2 text-xs font-bold text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-4 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs"
+              className="flex items-center gap-2 text-xs font-black text-indigo-900 bg-indigo-100 hover:bg-indigo-200 border border-indigo-300 px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-98"
+              title="過去全期間の全スケジュール・利用者・設定データを1つのJSONファイルとしてエクスポートします"
             >
-              <Download className="w-4 h-4 text-indigo-600" />
+              <Download className="w-4 h-4 text-indigo-700" />
               <span>全データをファイル保存 (JSON出力)</span>
             </button>
           )}
 
           {onImportBackup && (
-            <label className="flex items-center gap-2 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-4 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs">
-              <Upload className="w-4 h-4 text-emerald-600" />
+            <label className="flex items-center gap-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-98">
+              <Upload className="w-4 h-4 text-emerald-100" />
               <span>保存ファイルから全復元 (JSON読込)</span>
               <input
                 type="file"
                 accept=".json"
+                onClick={(e) => { e.currentTarget.value = ""; }}
                 onChange={onImportBackup}
                 className="hidden"
               />
             </label>
           )}
+
+          <button
+            onClick={handleDownloadZip}
+            disabled={isDownloadingZip}
+            className="flex items-center gap-2 text-xs font-black text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-98"
+            title="完全なソースコード（HTML, CSS, TypeScript, Server, package.json等全ファイル）をZIP形式でダウンロードします"
+          >
+            {isDownloadingZip ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderArchive className="w-4 h-4" />}
+            <span>{isDownloadingZip ? "ZIP作成中..." : "完全ソースコードをZIPダウンロード (.zip)"}</span>
+          </button>
+        </div>
+
+        <div className="bg-amber-50/80 border border-amber-200/90 rounded-xl p-3 text-[11px] text-amber-900 leading-relaxed">
+          <span className="font-bold">💡 データ復元とクラウド同期について:</span>
+          「保存ファイルから全復元」を行うと、お持ちのバックアップファイルに含まれる7月以降の全期間データが安全に復元され、同時にFirebaseクラウドデータベースへも一括反映されます。スマートフォン側のヘルパー画面とも即座に完全同期されます。
         </div>
       </div>
 

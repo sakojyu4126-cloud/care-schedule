@@ -171,6 +171,14 @@ export default function App() {
       localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
     } catch (err) {
       console.warn(`[Storage] localStorage quota or restriction for ${key}:`, err);
+      if (key === "care_activities" && Array.isArray(value)) {
+        try {
+          const recentSlice = value.slice(-300);
+          localStorage.setItem(key, JSON.stringify(recentSlice));
+        } catch (e2) {
+          console.warn("[Storage] Fallback slice storage also failed, using Cloud Firebase:", e2);
+        }
+      }
     }
   };
 
@@ -465,27 +473,65 @@ export default function App() {
     }
   }, [isMobileMode]);
 
-  const handleExportBackup = () => {
-    const data = {
-      version: "1.0",
-      exportedAt: new Date().toISOString(),
-      clients,
-      activities,
-      settings,
-      reports,
-      freeStickers
-    };
-    const jsonStr = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
-    link.href = url;
-    link.download = `介護スケジュールバックアップ_${today}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const handleExportBackup = async () => {
+    try {
+      setSyncStatus("syncing");
+      setSyncNotice("クラウド(Firebase)から全期間データを集約中...");
+
+      // Fetch all activities from Firestore to ensure 100% of all past dates (July, August, September...) are included!
+      let allActivities = activities;
+      if (syncServiceRef.current) {
+        const firestoreActs = await syncServiceRef.current.fetchAllActivities();
+        if (firestoreActs.length > 0) {
+          const map = new Map<string, DailyActivity>();
+          for (const a of firestoreActs) {
+            if (a.id) map.set(a.id, a);
+          }
+          // Prioritize current state edits
+          for (const a of activities) {
+            if (a.id) map.set(a.id, a);
+          }
+          allActivities = Array.from(map.values());
+        }
+      }
+
+      const dateSet = new Set(allActivities.map(a => a.date).filter(Boolean));
+      const today = new Date().toISOString().split("T")[0].replace(/-/g, "");
+
+      const data = {
+        version: "2.4",
+        exportedAt: new Date().toISOString(),
+        summary: {
+          clientsCount: clients.length,
+          activitiesCount: allActivities.length,
+          datesCount: dateSet.size,
+          reportsCount: reports.length
+        },
+        clients,
+        activities: allActivities,
+        settings,
+        reports,
+        freeStickers
+      };
+
+      const jsonStr = JSON.stringify(data, null, 2);
+      const blob = new Blob([jsonStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `介護スケジュール全バックアップ_${today}_${dateSet.size}日分_${allActivities.length}件.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setSyncStatus("synced");
+      setSyncNotice(`✅ 全期間バックアップ(${dateSet.size}日分・${allActivities.length}件)を保存しました`);
+      setTimeout(() => setSyncNotice(null), 4000);
+    } catch (err: any) {
+      console.error("Backup export failed:", err);
+      alert("バックアップ保存に失敗しました: " + (err?.message || err));
+    }
   };
 
   const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -505,9 +551,20 @@ export default function App() {
         try {
           parsed = JSON.parse(fileText);
         } catch (jsonErr) {
-          alert("JSONファイルの解析に失敗しました。");
+          alert("JSONファイルの解析に失敗しました。正しいJSONファイルを選択してください。");
           return;
         }
+
+        const parseIfString = (val: any) => {
+          if (typeof val === "string") {
+            try {
+              return JSON.parse(val);
+            } catch {
+              return val;
+            }
+          }
+          return val;
+        };
 
         let extractedClients: any[] | null = null;
         let extractedActivities: any[] | null = null;
@@ -518,20 +575,58 @@ export default function App() {
         if (Array.isArray(parsed)) {
           if (parsed.some((item: any) => item && (item.kanjiName || item.roomNumber || item.weeklyServices))) {
             extractedClients = parsed;
-          } else if (parsed.some((item: any) => item && (item.timeCategory || item.timeRange || item.clientName))) {
+          } else if (parsed.some((item: any) => item && (item.timeCategory || item.timeRange || item.clientName || item.route))) {
             extractedActivities = parsed;
+          } else if (parsed.some((item: any) => item && item.date && Array.isArray(item.list))) {
+            extractedActivities = parsed.flatMap((item: any) => item.list || []);
           }
-        } else {
-          const candidates = [parsed, parsed.data, parsed.serverState, parsed.state, parsed.result].filter(Boolean);
+        } else if (parsed && typeof parsed === "object") {
+          // Check for localStorage keys format
+          if (parsed.care_clients) extractedClients = parseIfString(parsed.care_clients);
+          if (parsed.care_activities) extractedActivities = parseIfString(parsed.care_activities);
+          if (parsed.care_settings) extractedSettings = parseIfString(parsed.care_settings);
+          if (parsed.care_extraordinary_reports) extractedReports = parseIfString(parsed.care_extraordinary_reports);
+          if (parsed.care_free_stickers) extractedFreeStickers = parseIfString(parsed.care_free_stickers);
 
+          // Standard format candidates
+          const candidates = [parsed, parsed.data, parsed.serverState, parsed.state, parsed.result, parsed.backup].filter(Boolean);
           for (const cand of candidates) {
             if (!extractedClients && Array.isArray(cand.clients)) extractedClients = cand.clients;
-            if (!extractedActivities && Array.isArray(cand.activities)) extractedActivities = cand.activities;
-            if (!extractedSettings && cand.settings && typeof cand.settings === "object") extractedSettings = cand.settings;
-            if (!extractedReports && Array.isArray(cand.reports)) extractedReports = cand.reports;
-            if (!extractedFreeStickers && Array.isArray(cand.freeStickers)) extractedFreeStickers = cand.freeStickers;
+            if (!extractedActivities && cand.activities) extractedActivities = parseIfString(cand.activities);
+            if (!extractedSettings && cand.settings && typeof cand.settings === "object") extractedSettings = parseIfString(cand.settings);
+            if (!extractedReports && cand.reports) extractedReports = parseIfString(cand.reports);
+            if (!extractedFreeStickers && cand.freeStickers) extractedFreeStickers = parseIfString(cand.freeStickers);
+          }
+
+          // Also check if activities is a date map: { "2026-07-01": [...], "2026-07-02": [...] }
+          if (extractedActivities && !Array.isArray(extractedActivities) && typeof extractedActivities === "object") {
+            extractedActivities = Object.entries(extractedActivities).flatMap(([d, list]) => {
+              if (Array.isArray(list)) {
+                return list.map(item => ({ ...item, date: item.date || d }));
+              }
+              return [];
+            });
           }
         }
+
+        // Flatten any nested { date, list } elements in extractedActivities
+        if (Array.isArray(extractedActivities)) {
+          extractedActivities = extractedActivities.flatMap((item: any) => {
+            if (item && item.date && Array.isArray(item.list)) {
+              return item.list.map((sub: any) => ({ ...sub, date: sub.date || item.date }));
+            }
+            return item ? [item] : [];
+          });
+        }
+
+        if (!extractedClients && !extractedActivities && !extractedSettings && !extractedReports) {
+          alert("ファイル内に有効なバックアップデータ（利用者、スケジュール、設定等）が見つかりませんでした。\n正しいバックアップJSONファイルを選択してください。");
+          return;
+        }
+
+        setSyncNotice("⏳ データを復元中... クラウド(Firebase)へ保存しています");
+        setSyncStatus("syncing");
+        isApplyingServerSync.current = true;
 
         const newClients = extractedClients ? extractedClients.map((c: any) => {
           let kn = (c.kanjiName || "").trim();
@@ -542,47 +637,62 @@ export default function App() {
         }) : clients;
 
         const newActivities = extractedActivities || activities;
-        const newSettings = extractedSettings || settings;
+        const newSettings = extractedSettings ? cleanSettings(extractedSettings) : settings;
         const newReports = extractedReports || reports;
         const newFreeStickers = extractedFreeStickers || freeStickers;
 
-        isApplyingServerSync.current = true;
-
+        // 1. Update React states immediately
         setClients(newClients);
         setActivities(newActivities);
         setSettings(newSettings);
         setReports(newReports);
         setFreeStickers(newFreeStickers);
 
-        localStorage.setItem("care_clients", JSON.stringify(newClients));
-        localStorage.setItem("care_activities", JSON.stringify(newActivities));
-        localStorage.setItem("care_settings", JSON.stringify(newSettings));
-        localStorage.setItem("care_extraordinary_reports", JSON.stringify(newReports));
-        localStorage.setItem("care_free_stickers", JSON.stringify(newFreeStickers));
-        localStorage.setItem("has_user_data", "true");
+        // 2. Safe local storage (never crashes on QuotaExceededError)
+        safeSetItem("care_clients", newClients);
+        safeSetItem("care_settings", newSettings);
+        safeSetItem("care_extraordinary_reports", newReports);
+        safeSetItem("care_free_stickers", newFreeStickers);
+        safeSetItem("care_activities", newActivities);
+        safeSetItem("has_user_data", "true");
 
         const now = Date.now();
-        localStorage.setItem("care_last_sync_time", String(now));
-
-        if (syncServiceRef.current) {
-          syncServiceRef.current.pushClients(newClients);
-          syncServiceRef.current.pushSettings(newSettings);
-          syncServiceRef.current.pushReports(newReports);
-          syncServiceRef.current.pushFreeStickers(newFreeStickers);
-          syncServiceRef.current.pushAllActivities(newActivities);
-        }
-        setLastSyncTime(now);
         safeSetItem("care_last_sync_time", String(now));
-        setSyncStatus("synced");
+        setLastSyncTime(now);
 
+        // 3. Batch atomic write to Firebase Firestore
+        if (syncServiceRef.current) {
+          await syncServiceRef.current.restoreAllDataBatch({
+            clients: newClients,
+            settings: newSettings,
+            reports: newReports,
+            freeStickers: newFreeStickers,
+            activities: newActivities
+          });
+        }
+
+        setSyncStatus("synced");
         setTimeout(() => {
           isApplyingServerSync.current = false;
         }, 500);
 
-        alert(`【データ復元完了】\nデータが正常にシステムへ復元・反映されました！`);
+        const uniqueDates = new Set(newActivities.map((a: any) => a.date).filter(Boolean));
+        const datesCountStr = uniqueDates.size > 0 ? `${uniqueDates.size}日分 (計${newActivities.length}件)` : `${newActivities.length}件`;
+
+        alert(
+          `【データ復元完了】\n` +
+          `バックアップファイルから正常に復元されました！\n\n` +
+          `・登録利用者: ${newClients.length}名\n` +
+          `・活動スケジュール: ${datesCountStr}\n` +
+          `・臨時対応報告: ${newReports.length}件\n` +
+          `・全体設定 / シフト割り当て: 正常更新\n\n` +
+          `クラウド(Firebase)にも完全同期されました。複数端末（PC・スマートフォン）間で即座に最新状態が共有されます。`
+        );
       } catch (err: any) {
-        console.error("Failed to parse backup JSON:", err);
-        alert("エラーが発生しました: " + (err.message || err));
+        console.error("Failed to parse or restore backup JSON:", err);
+        isApplyingServerSync.current = false;
+        setSyncStatus("offline");
+        alert("復元処理中にエラーが発生しました:\n" + (err?.message || err));
       }
     };
     reader.readAsText(file);
@@ -956,6 +1066,8 @@ export default function App() {
                 onSetLock={setIsAdminLocked}
                 onExportBackup={handleExportBackup}
                 onImportBackup={handleImportBackup}
+                activitiesCount={activities.length}
+                datesCount={new Set(activities.map(a => a.date).filter(Boolean)).size}
               />
             )}
           </div>

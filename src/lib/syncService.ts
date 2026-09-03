@@ -5,6 +5,7 @@ import {
   getDocs,
   collection,
   onSnapshot,
+  writeBatch,
   Unsubscribe
 } from "firebase/firestore";
 import { db } from "./firebase";
@@ -46,6 +47,7 @@ export class FirebaseSyncService {
   private isApplyingRemoteUpdate = false;
   private pushTimers: Record<string, any> = {};
   private isInitialized = false;
+  private recentLocalPushes = new Map<string, number>();
 
   constructor(clientId: string, isMobileMode: boolean, initialDate: string) {
     this.clientId = clientId;
@@ -216,7 +218,13 @@ export class FirebaseSyncService {
       snapshot => {
         if (!snapshot.exists()) return;
         const data = snapshot.data();
-        if (data?.lastUpdatedBy === this.clientId) return;
+        
+        // Only ignore echo updates if this client pushed for THIS exact date in the last 2000ms
+        const lastPushed = this.recentLocalPushes.get(date) || 0;
+        if (data?.lastUpdatedBy === this.clientId && Date.now() - lastPushed < 2000) {
+          return;
+        }
+
         if (Array.isArray(data?.list)) {
           this.isApplyingRemoteUpdate = true;
           this.callbacks.onActivitiesUpdate?.(data.list, date);
@@ -255,6 +263,7 @@ export class FirebaseSyncService {
 
   public pushActivitiesForDate(date: string, activitiesForDate: DailyActivity[]) {
     if (this.isApplyingRemoteUpdate || !date) return;
+    this.recentLocalPushes.set(date, Date.now());
     this.debouncePush(`activities_${date}`, 350, async () => {
       try {
         this.callbacks.onStatusChange?.("syncing");
@@ -278,8 +287,25 @@ export class FirebaseSyncService {
     });
   }
 
-  public async pushAllActivities(activities: DailyActivity[]) {
-    if (this.isApplyingRemoteUpdate || !activities || activities.length === 0) return;
+  public async fetchAllActivities(): Promise<DailyActivity[]> {
+    try {
+      const snap = await getDocs(collection(db, "care_activities"));
+      const all: DailyActivity[] = [];
+      snap.forEach(d => {
+        const data = d.data();
+        if (Array.isArray(data?.list)) {
+          all.push(...data.list);
+        }
+      });
+      return all;
+    } catch (err) {
+      console.error("[FirebaseSync] fetchAllActivities error:", err);
+      return [];
+    }
+  }
+
+  public async pushAllActivities(activities: DailyActivity[]): Promise<boolean> {
+    if (!activities || activities.length === 0) return false;
     try {
       this.callbacks.onStatusChange?.("syncing");
       const dateMap = new Map<string, DailyActivity[]>();
@@ -289,18 +315,119 @@ export class FirebaseSyncService {
         dateMap.get(a.date)!.push(a);
       }
       const now = Date.now();
-      for (const [date, list] of dateMap.entries()) {
-        await setDoc(doc(db, "care_activities", date), {
-          date,
-          list,
+      const entries = Array.from(dateMap.entries());
+      const chunkSize = 200;
+      for (let i = 0; i < entries.length; i += chunkSize) {
+        const chunk = entries.slice(i, i + chunkSize);
+        const batch = writeBatch(db);
+        for (const [date, list] of chunk) {
+          batch.set(doc(db, "care_activities", date), {
+            date,
+            list,
+            updatedAt: now,
+            lastUpdatedBy: this.clientId
+          });
+        }
+        await batch.commit();
+      }
+      this.callbacks.onStatusChange?.("synced");
+      return true;
+    } catch (e) {
+      console.error("[FirebaseSync] pushAllActivities failed:", e);
+      this.callbacks.onStatusChange?.("offline");
+      return false;
+    }
+  }
+
+  public async restoreAllDataBatch(data: {
+    clients?: Client[];
+    settings?: AppSettings;
+    reports?: ExtraordinaryReport[];
+    freeStickers?: FreeSticker[];
+    activities?: DailyActivity[];
+  }): Promise<{ success: boolean; dateCount: number; actCount: number; error?: string }> {
+    try {
+      this.callbacks.onStatusChange?.("syncing");
+      const now = Date.now();
+
+      // 1. Core documents
+      if (data.clients && data.clients.length > 0) {
+        await setDoc(doc(db, "care_system", "clients"), {
+          list: data.clients,
           updatedAt: now,
           lastUpdatedBy: this.clientId
         });
       }
+
+      if (data.settings) {
+        await setDoc(doc(db, "care_system", "settings"), {
+          data: cleanSettings(data.settings),
+          updatedAt: now,
+          lastUpdatedBy: this.clientId
+        });
+      }
+
+      if (data.reports) {
+        await setDoc(doc(db, "care_system", "reports"), {
+          list: data.reports,
+          updatedAt: now,
+          lastUpdatedBy: this.clientId
+        });
+      }
+
+      if (data.freeStickers) {
+        await setDoc(doc(db, "care_system", "freeStickers"), {
+          list: data.freeStickers,
+          updatedAt: now,
+          lastUpdatedBy: this.clientId
+        });
+      }
+
+      // 2. Activities in batches of 200 documents
+      let totalActivities = 0;
+      let dateCount = 0;
+
+      if (data.activities && data.activities.length > 0) {
+        const dateMap = new Map<string, DailyActivity[]>();
+        for (const a of data.activities) {
+          if (!a.date) continue;
+          if (!dateMap.has(a.date)) dateMap.set(a.date, []);
+          dateMap.get(a.date)!.push(a);
+        }
+
+        dateCount = dateMap.size;
+        totalActivities = data.activities.length;
+
+        const dateEntries = Array.from(dateMap.entries());
+        const chunkSize = 200;
+
+        for (let i = 0; i < dateEntries.length; i += chunkSize) {
+          const chunk = dateEntries.slice(i, i + chunkSize);
+          const batch = writeBatch(db);
+          for (const [date, list] of chunk) {
+            batch.set(doc(db, "care_activities", date), {
+              date,
+              list,
+              updatedAt: now,
+              lastUpdatedBy: this.clientId
+            });
+          }
+          await batch.commit();
+        }
+      }
+
+      await setDoc(doc(db, "care_system", "metadata"), {
+        updatedAt: now,
+        lastUpdatedBy: this.clientId,
+        lastAction: "full_restore_completed"
+      }, { merge: true });
+
       this.callbacks.onStatusChange?.("synced");
-    } catch (e) {
-      console.error("[FirebaseSync] pushAllActivities failed:", e);
+      return { success: true, dateCount, actCount: totalActivities };
+    } catch (err: any) {
+      console.error("[FirebaseSync] restoreAllDataBatch error:", err);
       this.callbacks.onStatusChange?.("offline");
+      return { success: false, dateCount: 0, actCount: 0, error: err?.message || String(err) };
     }
   }
 
