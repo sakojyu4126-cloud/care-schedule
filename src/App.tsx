@@ -305,7 +305,6 @@ export default function App() {
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
   const lastSyncTimeRef = React.useRef<number>(0);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error" | "offline">("synced");
-  const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [restoreModalInfo, setRestoreModalInfo] = useState<{
     isOpen: boolean;
     isSuccess: boolean;
@@ -348,14 +347,7 @@ export default function App() {
   const handleManualSync = async () => {
     if (syncServiceRef.current) {
       setSyncStatus("syncing");
-      setSyncNotice("クラウド(Firebase)と同期中...");
-      const ok = await syncServiceRef.current.forceSync();
-      if (ok) {
-        setSyncNotice("✅ クラウド(Firebase)と最新同期しました！");
-      } else {
-        setSyncNotice("最新同期を実行しました");
-      }
-      setTimeout(() => setSyncNotice(null), 3000);
+      await syncServiceRef.current.forceSync();
     }
   };
 
@@ -369,8 +361,6 @@ export default function App() {
         setClients(newClients);
         safeSetItem("care_clients", newClients);
         safeSetItem("has_user_data", "true");
-        setSyncNotice("🔄 相手側の利用者変更を同期しました");
-        setTimeout(() => setSyncNotice(null), 3000);
         setTimeout(() => { isApplyingServerSync.current = false; }, 200);
       },
       onSettingsUpdate: (newSettings) => {
@@ -383,8 +373,6 @@ export default function App() {
             setSelectedDate(newSettings.managerActiveDate);
           }
         }
-        setSyncNotice("🔄 相手側のシフト/設定変更を同期しました");
-        setTimeout(() => setSyncNotice(null), 3000);
         setTimeout(() => { isApplyingServerSync.current = false; }, 200);
       },
       onReportsUpdate: (newReports) => {
@@ -392,8 +380,6 @@ export default function App() {
         setReports(newReports);
         safeSetItem("care_extraordinary_reports", newReports);
         safeSetItem("has_user_data", "true");
-        setSyncNotice("🔄 相手側の臨時報告を同期しました");
-        setTimeout(() => setSyncNotice(null), 3000);
         setTimeout(() => { isApplyingServerSync.current = false; }, 200);
       },
       onFreeStickersUpdate: (newStickers) => {
@@ -410,8 +396,6 @@ export default function App() {
           safeSetItem("care_activities", merged);
           return merged;
         });
-        setSyncNotice("🔄 相手側の活動表/チェック変更を同期しました");
-        setTimeout(() => setSyncNotice(null), 3000);
         setTimeout(() => { isApplyingServerSync.current = false; }, 200);
       },
       onStatusChange: (status) => {
@@ -486,7 +470,6 @@ export default function App() {
   const handleExportBackup = async () => {
     try {
       setSyncStatus("syncing");
-      setSyncNotice("クラウド(Firebase)から全期間データを集約中...");
 
       // Fetch all activities from Firestore to ensure 100% of all past dates (July, August, September...) are included!
       let allActivities = activities;
@@ -536,8 +519,6 @@ export default function App() {
       URL.revokeObjectURL(url);
 
       setSyncStatus("synced");
-      setSyncNotice(`✅ 全期間バックアップ(${dateSet.size}日分・${allActivities.length}件)を保存しました`);
-      setTimeout(() => setSyncNotice(null), 4000);
     } catch (err: any) {
       console.error("Backup export failed:", err);
       alert("バックアップ保存に失敗しました: " + (err?.message || err));
@@ -642,7 +623,6 @@ export default function App() {
         );
       }
 
-      setSyncNotice("⏳ データを復元中... クラウド(Firebase)へ保存しています");
       setSyncStatus("syncing");
       isApplyingServerSync.current = true;
 
@@ -715,9 +695,6 @@ export default function App() {
         datesCountStr,
         reportsCount: newReports.length
       });
-
-      setSyncNotice("✅ 全データの復元が完了し、クラウド(Firebase)に同期されました");
-      setTimeout(() => setSyncNotice(null), 5000);
 
       return { success: true, message: "復元完了" };
     } catch (err: any) {
@@ -946,13 +923,6 @@ export default function App() {
           </div>
 
         </div>
-
-        {/* Sync Toast Notification */}
-        {syncNotice && (
-          <div className="fixed top-14 right-4 z-50 bg-slate-900/95 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xl border border-slate-700 backdrop-blur-xs flex items-center gap-2 animate-bounce">
-            <span>{syncNotice}</span>
-          </div>
-        )}
       </header>
 
       {/* PC Admin View Layout */}
