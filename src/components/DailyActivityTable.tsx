@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from "react";
 import { DailyActivity, AppSettings, MedicineState, Client, FreeSticker, ExtraordinaryReport } from "../types";
-import { Plus, Edit2, Trash2, Eye, EyeOff, Pill, Users, Calendar, Check, Clock, Megaphone, RefreshCw } from "lucide-react";
+import { Plus, Edit2, Trash2, Eye, EyeOff, Pill, Users, Calendar, Check, Clock, Megaphone, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { parseTimeToMinutes, formatTimeHHMM, getShortenedServiceCode, getTodayDateString, getWingFromRoom, mergeActivitiesWithReports, parseTimeRangeString, formatTimeRange2Digits, normalizeHelperName, resolveHelperRoutesForDate, isInvalidHelperName } from "../utils/scheduler";
 
@@ -314,6 +314,24 @@ export default function DailyActivityTable({
   
   const [generalMsg, setGeneralMsg] = useState(settings.generalInstruction);
   const [showMessages, setShowMessages] = useState(true);
+  const [showShiftRow, setShowShiftRow] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem("care_show_shift_row");
+      return saved !== null ? saved === "true" : true;
+    } catch {
+      return true;
+    }
+  });
+
+  const toggleShiftRow = () => {
+    setShowShiftRow((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("care_show_shift_row", String(next));
+      } catch {}
+      return next;
+    });
+  };
 
   // Keep generalMsg synced whenever settings.generalInstruction updates from server sync or date change
   useEffect(() => {
@@ -789,7 +807,7 @@ export default function DailyActivityTable({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-[11px] font-black text-red-800">
             <Megaphone className="w-3.5 h-3.5 text-red-600 animate-pulse shrink-0" />
-            <span>全体指示・申し送り事項（全スマホ画面トップに連動）</span>
+            <span>全体の指示申し送り事項</span>
           </div>
           <button
             onClick={() => setShowMessages(!showMessages)}
@@ -815,247 +833,277 @@ export default function DailyActivityTable({
         )}
       </div>
 
-      {/* 📅 HELPERS SHIFT & MEDICATION STICKERS */}
-      <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 p-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3 text-slate-800">
-        <div className="flex-1 min-w-0">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 w-full">
-            <div className="flex-1 min-w-0">
-              {todayShiftInfo && todayShiftInfo.hasData ? (
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
-                    <Users className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>出勤 ({todayShiftInfo.onDuty.length}名):</span>
-                  </span>
-                  <div className="flex flex-wrap gap-1 items-center max-h-[50px] overflow-y-auto">
-                    {todayShiftInfo.onDuty.map((h, idx) => {
-                      let badgeBg = "bg-slate-100 text-slate-700 border-slate-200";
-                      let label = "出勤";
-                      
-                      if (h.code === "A") {
-                         badgeBg = "bg-blue-50 text-blue-700 border-blue-200/50";
-                         label = "A";
-                      } else if (h.code === "C") {
-                         badgeBg = "bg-purple-50 text-purple-700 border-purple-200/50";
-                         label = "C";
-                      } else if (h.code === "a") {
-                         badgeBg = "bg-amber-50 text-amber-700 border-amber-200/50";
-                         label = "a";
-                      } else if (h.code === "b") {
-                         badgeBg = "bg-orange-50 text-orange-700 border-orange-200/50";
-                         label = "b";
-                      } else if (h.code === "D") {
-                         badgeBg = "bg-green-50 text-green-700 border-green-200/50";
-                         label = "D";
-                      } else if (h.code === "有") {
-                         badgeBg = "bg-emerald-50 text-emerald-700 border-emerald-200/50";
-                         label = "有給";
-                      }
+      {/* 📅 HELPERS SHIFT & COLUMN TOGGLES */}
+      {showShiftRow ? (
+        <div className="bg-white rounded-xl shadow-xs border border-slate-200/80 p-2 sm:p-2.5 flex flex-col md:flex-row md:items-center justify-between gap-2.5 text-slate-800 transition-all">
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 w-full">
+              <div className="flex-1 min-w-0">
+                {todayShiftInfo && todayShiftInfo.hasData ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 text-[11px] font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
+                      <Users className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>出勤 ({todayShiftInfo.onDuty.length}名):</span>
+                    </span>
+                    <div className="flex flex-wrap gap-1 items-center max-h-[50px] overflow-y-auto">
+                      {todayShiftInfo.onDuty.map((h, idx) => {
+                        let badgeBg = "bg-slate-100 text-slate-700 border-slate-200";
+                        let label = "出勤";
+                        
+                        if (h.code === "A") {
+                           badgeBg = "bg-blue-50 text-blue-700 border-blue-200/50";
+                           label = "A";
+                        } else if (h.code === "C") {
+                           badgeBg = "bg-purple-50 text-purple-700 border-purple-200/50";
+                           label = "C";
+                        } else if (h.code === "a") {
+                           badgeBg = "bg-amber-50 text-amber-700 border-amber-200/50";
+                           label = "a";
+                        } else if (h.code === "b") {
+                           badgeBg = "bg-orange-50 text-orange-700 border-orange-200/50";
+                           label = "b";
+                        } else if (h.code === "D") {
+                           badgeBg = "bg-green-50 text-green-700 border-green-200/50";
+                           label = "D";
+                        } else if (h.code === "有") {
+                           badgeBg = "bg-emerald-50 text-emerald-700 border-emerald-200/50";
+                           label = "有給";
+                        }
 
-                      return (
-                        <div 
-                          key={idx}
-                          className={`inline-flex items-center gap-0.5 text-[10px] font-extrabold px-1.5 py-0.5 bg-white border rounded shadow-3xs ${badgeBg}`}
-                        >
-                          <span className="font-bold">{h.name}</span>
-                          <span className="text-[8px] px-0.5 py-0.25 rounded font-black uppercase bg-white border border-current opacity-90 scale-90 origin-center">
-                            {label}
-                          </span>
-                        </div>
-                      );
-                    })}
+                        return (
+                          <div 
+                            key={idx}
+                            className={`inline-flex items-center gap-0.5 text-[10px] font-extrabold px-1.5 py-0.5 bg-white border rounded shadow-3xs ${badgeBg}`}
+                          >
+                            <span className="font-bold">{h.name}</span>
+                            <span className="text-[8px] px-0.5 py-0.25 rounded font-black uppercase bg-white border border-current opacity-90 scale-90 origin-center">
+                              {label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(settings.dateHelperRoutes?.[currentDateStr] || settings.dateVisibleExtraColumns?.[currentDateStr]) && (
+                      <button
+                        onClick={handleResetHelperRoutes}
+                        className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded cursor-pointer transition-colors shrink-0"
+                        title="個別の手動変更を解除し、シフト表通りのヘルパー配置・列数にリセットします"
+                      >
+                        <RefreshCw className="w-3 h-3 text-indigo-600 animate-spin-once" />
+                        <span>シフト通りに再同期</span>
+                      </button>
+                    )}
                   </div>
-                  {(settings.dateHelperRoutes?.[currentDateStr] || settings.dateVisibleExtraColumns?.[currentDateStr]) && (
-                    <button
-                      onClick={handleResetHelperRoutes}
-                      className="inline-flex items-center gap-1 text-[10px] font-black text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2 py-0.5 rounded cursor-pointer transition-colors shrink-0"
-                      title="個別の手動変更を解除し、シフト表通りのヘルパー配置・列数にリセットします"
-                    >
-                      <RefreshCw className="w-3 h-3 text-indigo-600 animate-spin-once" />
-                      <span>シフト通りに再同期</span>
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
-                  ⚠️ 本日のシフトデータはありません（「システム設定」から登録できます）
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center gap-1 shrink-0 bg-slate-100 border border-slate-250 p-0.5 rounded-lg shadow-3xs">
-              <button
-                onClick={handleClearExtraColumns}
-                className={`text-[9px] font-black px-2 py-1 rounded-md transition-all select-none cursor-pointer border ${
-                  visibleExtraColumns.length === 0 
-                    ? "bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed opacity-60" 
-                    : "bg-white hover:bg-red-50 text-red-600 border-red-200 hover:border-red-300 shadow-3xs"
-                }`}
-                disabled={visibleExtraColumns.length === 0}
-                title="この日の追加列をすべて非表示にして、基本5列に戻します"
-              >
-                列を削除
-              </button>
-              <div className="w-[1px] h-3.5 bg-slate-200 mx-0.5" />
-              <button
-                onClick={() => handleToggleExtraColumn("A4")}
-                className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all select-none cursor-pointer border ${
-                  visibleExtraColumns.includes("A4") 
-                    ? "bg-blue-600 text-white border-blue-600 shadow-3xs" 
-                    : "bg-white text-blue-600 border-slate-200 hover:bg-blue-50"
-                }`}
-              >
-                A4
-              </button>
-              <button
-                onClick={() => handleToggleExtraColumn("B")}
-                className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all select-none cursor-pointer border ${
-                  visibleExtraColumns.includes("B") 
-                    ? "bg-blue-600 text-white border-blue-600 shadow-3xs" 
-                    : "bg-white text-blue-600 border-slate-200 hover:bg-blue-50"
-                }`}
-              >
-                B
-              </button>
-              <button
-                onClick={() => handleToggleExtraColumn("C3")}
-                className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all select-none cursor-pointer border ${
-                  visibleExtraColumns.includes("C3") 
-                    ? "bg-purple-600 text-white border-purple-600 shadow-3xs" 
-                    : "bg-white text-purple-600 border-slate-200 hover:bg-purple-50"
-                }`}
-              >
-                C3
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="hidden md:block w-[1px] h-6 bg-slate-200" />
-
-        <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <span className="inline-flex items-center gap-1 text-[11px] font-black text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md shrink-0">
-            <Pill className="w-3.5 h-3.5 text-rose-500" />
-            <span>配薬シール:</span>
-          </span>
-
-          <div 
-            className="bg-slate-50/10 border border-dashed border-slate-200 rounded-lg px-2 py-1 flex items-center gap-1.5"
-            style={{
-              backgroundImage: "radial-gradient(#e2e8f0 1px, transparent 1px)",
-              backgroundSize: "8px 8px"
-            }}
-          >
-            <div 
-              draggable="true"
-              onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", "medicine1");
-              }}
-              onClick={() => {
-                setActiveStamp(activeStamp === "medicine1" ? null : "medicine1");
-              }}
-              className={`group relative flex items-center gap-1 cursor-grab active:cursor-grabbing px-1.5 py-0.5 rounded border transition-all ${
-                activeStamp === "medicine1" ? "bg-amber-100 border-amber-400 ring-2 ring-amber-400" : "bg-white hover:bg-slate-50 border-slate-100 shadow-3xs hover:scale-102"
-              }`}
-              title="ドラッグ、またはクリックしてスタンプ"
-            >
-              <MedicineSticker type="medicine1" size="xs" />
-              {activeStamp === "medicine1" && (
-                <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
-                </span>
-              )}
-            </div>
-
-            <div 
-              draggable="true"
-              onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", "medicine2");
-              }}
-              onClick={() => {
-                setActiveStamp(activeStamp === "medicine2" ? null : "medicine2");
-              }}
-              className={`group relative flex items-center gap-1 cursor-grab active:cursor-grabbing px-1.5 py-0.5 rounded border transition-all ${
-                activeStamp === "medicine2" ? "bg-pink-100 border-pink-400 ring-2 ring-pink-400" : "bg-white hover:bg-slate-50 border-slate-100 shadow-3xs hover:scale-102"
-              }`}
-              title="ドラッグ、またはクリックしてスタンプ"
-            >
-              <MedicineSticker type="medicine2" size="xs" />
-              {activeStamp === "medicine2" && (
-                <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-pink-500"></span>
-                </span>
-              )}
-            </div>
-
-            <div 
-              draggable="true"
-              onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", "medicine3");
-              }}
-              onClick={() => {
-                setActiveStamp(activeStamp === "medicine3" ? null : "medicine3");
-              }}
-              className={`group relative flex items-center gap-1 cursor-grab active:cursor-grabbing px-1.5 py-0.5 rounded border transition-all ${
-                activeStamp === "medicine3" ? "bg-emerald-100 border-emerald-400 ring-2 ring-emerald-400" : "bg-white hover:bg-slate-50 border-slate-100 shadow-3xs hover:scale-102"
-              }`}
-              title="ドラッグ、またはクリックしてスタンプ"
-            >
-              <MedicineSticker type="medicine3" size="xs" />
-              {activeStamp === "medicine3" && (
-                <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-                </span>
-              )}
-            </div>
-
-            <div 
-              draggable="true"
-              onDragStart={(e) => {
-                e.dataTransfer.setData("text/plain", "none");
-              }}
-              onClick={() => {
-                setActiveStamp(activeStamp === "none" ? null : "none");
-              }}
-              className={`group relative flex items-center gap-1 cursor-grab active:cursor-grabbing px-1.5 py-0.5 rounded border transition-all ${
-                activeStamp === "none" ? "bg-slate-200 border-slate-400 ring-2 ring-slate-400" : "bg-white hover:bg-slate-50 border-slate-100 shadow-3xs hover:scale-102"
-              }`}
-              title="ドラッグ、またはクリックしてシールを剥がします"
-            >
-              <div className="w-4 h-4 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 text-[8px] font-bold leading-none select-none group-hover:border-slate-400 group-hover:text-slate-500 transition-colors">
-                消
+                ) : (
+                  <div className="text-[10px] font-bold text-slate-400 flex items-center gap-1">
+                    ⚠️ 本日のシフトデータはありません（「システム設定」から登録できます）
+                  </div>
+                )}
               </div>
-              <span className="text-[9px] font-black text-slate-500">はがす</span>
-              {activeStamp === "none" && (
-                <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-slate-500"></span>
-                </span>
-              )}
+
+              <div className="flex items-center gap-1 shrink-0 bg-slate-100 border border-slate-250 p-0.5 rounded-lg shadow-3xs">
+                <button
+                  onClick={handleClearExtraColumns}
+                  className={`text-[9px] font-black px-2 py-1 rounded-md transition-all select-none cursor-pointer border ${
+                    visibleExtraColumns.length === 0 
+                      ? "bg-slate-200 text-slate-400 border-slate-300 cursor-not-allowed opacity-60" 
+                      : "bg-white hover:bg-red-50 text-red-600 border-red-200 hover:border-red-300 shadow-3xs"
+                  }`}
+                  disabled={visibleExtraColumns.length === 0}
+                  title="この日の追加列をすべて非表示にして、基本5列に戻します"
+                >
+                  列を削除
+                </button>
+                <div className="w-[1px] h-3.5 bg-slate-200 mx-0.5" />
+                <button
+                  onClick={() => handleToggleExtraColumn("A4")}
+                  className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all select-none cursor-pointer border ${
+                    visibleExtraColumns.includes("A4") 
+                      ? "bg-blue-600 text-white border-blue-600 shadow-3xs" 
+                      : "bg-white text-blue-600 border-slate-200 hover:bg-blue-50"
+                  }`}
+                >
+                  A4
+                </button>
+                <button
+                  onClick={() => handleToggleExtraColumn("B")}
+                  className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all select-none cursor-pointer border ${
+                    visibleExtraColumns.includes("B") 
+                      ? "bg-blue-600 text-white border-blue-600 shadow-3xs" 
+                      : "bg-white text-blue-600 border-slate-200 hover:bg-blue-50"
+                  }`}
+                >
+                  B
+                </button>
+                <button
+                  onClick={() => handleToggleExtraColumn("C3")}
+                  className={`text-[10px] font-black px-2.5 py-1 rounded-md transition-all select-none cursor-pointer border ${
+                    visibleExtraColumns.includes("C3") 
+                      ? "bg-purple-600 text-white border-purple-600 shadow-3xs" 
+                      : "bg-white text-purple-600 border-slate-200 hover:bg-purple-50"
+                  }`}
+                >
+                  C3
+                </button>
+              </div>
             </div>
           </div>
 
-          {activeStamp && (
-            <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 text-rose-800 px-2 py-1 rounded-md text-[10px] font-extrabold shadow-3xs animate-pulse">
-              <span>
-                スタンプ中: 
-                {activeStamp === "medicine1" && "①"}
-                {activeStamp === "medicine2" && "②"}
-                {activeStamp === "medicine3" && "③"}
-                {activeStamp === "none" && "はがす"}
-              </span>
-              <button 
-                onClick={() => setActiveStamp(null)}
-                className="text-[9px] font-black text-rose-600 bg-white border border-rose-200 hover:bg-rose-100 px-1 py-0.5 rounded"
+          {/* ①②③ Stickers and Erase tool (without the capsule badge) */}
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <div 
+              className="bg-slate-50/20 border border-dashed border-slate-200 rounded-lg px-2 py-1 flex items-center gap-1.5"
+              style={{
+                backgroundImage: "radial-gradient(#e2e8f0 1px, transparent 1px)",
+                backgroundSize: "8px 8px"
+              }}
+            >
+              <div 
+                draggable="true"
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", "medicine1");
+                }}
+                onClick={() => {
+                  setActiveStamp(activeStamp === "medicine1" ? null : "medicine1");
+                }}
+                className={`group relative flex items-center gap-1 cursor-grab active:cursor-grabbing px-1.5 py-0.5 rounded border transition-all ${
+                  activeStamp === "medicine1" ? "bg-amber-100 border-amber-400 ring-2 ring-amber-400" : "bg-white hover:bg-slate-50 border-slate-100 shadow-3xs hover:scale-102"
+                }`}
+                title="①シール: ドラッグ、またはクリックしてスタンプ"
               >
-                解除
-              </button>
+                <MedicineSticker type="medicine1" size="xs" />
+                {activeStamp === "medicine1" && (
+                  <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500"></span>
+                  </span>
+                )}
+              </div>
+
+              <div 
+                draggable="true"
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", "medicine2");
+                }}
+                onClick={() => {
+                  setActiveStamp(activeStamp === "medicine2" ? null : "medicine2");
+                }}
+                className={`group relative flex items-center gap-1 cursor-grab active:cursor-grabbing px-1.5 py-0.5 rounded border transition-all ${
+                  activeStamp === "medicine2" ? "bg-pink-100 border-pink-400 ring-2 ring-pink-400" : "bg-white hover:bg-slate-50 border-slate-100 shadow-3xs hover:scale-102"
+                }`}
+                title="②シール: ドラッグ、またはクリックしてスタンプ"
+              >
+                <MedicineSticker type="medicine2" size="xs" />
+                {activeStamp === "medicine2" && (
+                  <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-pink-500"></span>
+                  </span>
+                )}
+              </div>
+
+              <div 
+                draggable="true"
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", "medicine3");
+                }}
+                onClick={() => {
+                  setActiveStamp(activeStamp === "medicine3" ? null : "medicine3");
+                }}
+                className={`group relative flex items-center gap-1 cursor-grab active:cursor-grabbing px-1.5 py-0.5 rounded border transition-all ${
+                  activeStamp === "medicine3" ? "bg-emerald-100 border-emerald-400 ring-2 ring-emerald-400" : "bg-white hover:bg-slate-50 border-slate-100 shadow-3xs hover:scale-102"
+                }`}
+                title="③シール: ドラッグ、またはクリックしてスタンプ"
+              >
+                <MedicineSticker type="medicine3" size="xs" />
+                {activeStamp === "medicine3" && (
+                  <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+                  </span>
+                )}
+              </div>
+
+              <div 
+                draggable="true"
+                onDragStart={(e) => {
+                  e.dataTransfer.setData("text/plain", "none");
+                }}
+                onClick={() => {
+                  setActiveStamp(activeStamp === "none" ? null : "none");
+                }}
+                className={`group relative flex items-center gap-1 cursor-grab active:cursor-grabbing px-1.5 py-0.5 rounded border transition-all ${
+                  activeStamp === "none" ? "bg-slate-200 border-slate-400 ring-2 ring-slate-400" : "bg-white hover:bg-slate-50 border-slate-100 shadow-3xs hover:scale-102"
+                }`}
+                title="ドラッグ、またはクリックしてシールを剥がします"
+              >
+                <div className="w-4 h-4 rounded border border-dashed border-slate-300 bg-slate-50 flex items-center justify-center text-slate-400 text-[8px] font-bold leading-none select-none group-hover:border-slate-400 group-hover:text-slate-500 transition-colors">
+                  消
+                </div>
+                <span className="text-[9px] font-black text-slate-500">はがす</span>
+                {activeStamp === "none" && (
+                  <span className="absolute -top-1 -right-1 flex h-1.5 w-1.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-slate-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-slate-500"></span>
+                  </span>
+                )}
+              </div>
             </div>
-          )}
+
+            {activeStamp && (
+              <div className="flex items-center gap-1.5 bg-rose-50 border border-rose-100 text-rose-800 px-2 py-1 rounded-md text-[10px] font-extrabold shadow-3xs animate-pulse">
+                <span>
+                  スタンプ中: 
+                  {activeStamp === "medicine1" && "①"}
+                  {activeStamp === "medicine2" && "②"}
+                  {activeStamp === "medicine3" && "③"}
+                  {activeStamp === "none" && "はがす"}
+                </span>
+                <button 
+                  onClick={() => setActiveStamp(null)}
+                  className="text-[9px] font-black text-rose-600 bg-white border border-rose-200 hover:bg-rose-100 px-1 py-0.5 rounded"
+                >
+                  解除
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center justify-end shrink-0 pl-1 border-t md:border-t-0 md:border-l border-slate-200/80 pt-1.5 md:pt-0">
+            <button
+              type="button"
+              onClick={toggleShiftRow}
+              className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-500 hover:text-slate-800 bg-slate-50 hover:bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-lg cursor-pointer transition-colors shadow-3xs select-none"
+              title="出勤ヘルパー・列設定行を非表示にします"
+            >
+              <ChevronUp className="w-3 h-3 text-slate-500" />
+              <span>非表示</span>
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-white/90 hover:bg-white rounded-lg border border-slate-200/80 px-2.5 py-1 flex items-center justify-between text-slate-600 shadow-3xs transition-all">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-500 select-none">
+            <Users className="w-3.5 h-3.5 text-indigo-500" />
+            <span>出勤ヘルパー・列・シール</span>
+            {todayShiftInfo && todayShiftInfo.hasData && (
+              <span className="text-[10px] text-slate-400">
+                ({todayShiftInfo.onDuty.length}名出勤)
+              </span>
+            )}
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleShiftRow}
+            className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 px-2.5 py-1 rounded-lg cursor-pointer transition-colors shadow-3xs select-none"
+            title="出勤ヘルパー・列設定行を表示します"
+          >
+            <ChevronDown className="w-3 h-3 text-indigo-600" />
+            <span>表示</span>
+          </button>
+        </div>
+      )}
 
       {/* Timeline view container */}
       <div className="bg-white rounded-2xl shadow-xs border border-slate-200/80 overflow-x-auto">
