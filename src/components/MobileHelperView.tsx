@@ -509,20 +509,38 @@ export default function MobileHelperView({
         <div className="flex items-center justify-between mb-1.5 px-0.5 text-[11px] select-none">
           <div className="flex items-center gap-1.5 font-bold">
             <span className={`w-2 h-2 rounded-full ${syncStatus === "syncing" ? "bg-amber-400 animate-ping" : syncStatus === "synced" ? "bg-emerald-500" : "bg-red-500"}`} />
-            <span className="text-slate-600">
-              {syncStatus === "syncing" ? "PCと同期中..." : syncStatus === "synced" ? "PCと常時連動中" : "オフライン"}
+            <span className="text-slate-700">
+              {syncStatus === "syncing" ? "同期中..." : syncStatus === "synced" ? "PCと常時連動中" : "オフライン"}
+            </span>
+            <span className="text-[9.5px] font-normal px-1.5 py-0.2 rounded-full bg-slate-100 text-slate-500 border border-slate-200">
+              v2.4最新
             </span>
           </div>
-          {onManualSync && (
+          <div className="flex items-center gap-1">
+            {onManualSync && (
+              <button
+                type="button"
+                onClick={() => onManualSync()}
+                className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 active:bg-blue-100 text-slate-700 active:text-blue-700 text-[10.5px] font-bold rounded-lg border border-slate-200/80 transition-all cursor-pointer touch-manipulation active:scale-95"
+                title="PCの最新データを再同期します"
+              >
+                <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? "animate-spin text-blue-600" : "text-slate-500"}`} />
+                <span>最新同期</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={() => onManualSync()}
-              className="flex items-center gap-1 px-2 py-0.5 bg-slate-100 hover:bg-slate-200 active:bg-blue-100 text-slate-700 active:text-blue-700 text-[10.5px] font-bold rounded-lg border border-slate-200/80 transition-all cursor-pointer touch-manipulation active:scale-95"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.location.reload();
+                }
+              }}
+              className="flex items-center gap-1 px-2 py-0.5 bg-slate-50 hover:bg-slate-100 active:bg-slate-200 text-slate-500 text-[10.5px] font-medium rounded-lg border border-slate-200/60 transition-all cursor-pointer touch-manipulation active:scale-95"
+              title="画面全体を最新状態に再読込します"
             >
-              <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? "animate-spin text-blue-600" : "text-slate-500"}`} />
-              <span>最新データ更新</span>
+              <span>再読込</span>
             </button>
-          )}
+          </div>
         </div>
 
         {activeMobileView === "schedule" ? (

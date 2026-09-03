@@ -236,10 +236,41 @@ export default function App() {
       if (params.get("view") === "mobile" || params.get("mode") === "mobile") {
         return true;
       }
-      return window.innerWidth <= 768;
+      if (params.get("view") === "pc" || params.get("mode") === "pc") {
+        return false;
+      }
+      const savedMode = sessionStorage.getItem("care_view_mode");
+      if (savedMode === "mobile") return true;
+      if (savedMode === "pc") return false;
+
+      // Smart mobile detection (UA, touch screen, small viewport)
+      const isMobileUA = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent || ""
+      );
+      const isSmallScreen = window.innerWidth <= 768 || window.screen.width <= 768;
+      return isMobileUA || isSmallScreen;
     }
     return false;
   });
+
+  useEffect(() => {
+    const handleResize = () => {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("view") === "mobile" || params.get("mode") === "mobile") {
+        setIsMobileMode(true);
+      } else if (params.get("view") === "pc" || params.get("mode") === "pc") {
+        setIsMobileMode(false);
+      } else if (sessionStorage.getItem("care_view_mode") === "mobile") {
+        setIsMobileMode(true);
+      } else if (sessionStorage.getItem("care_view_mode") === "pc") {
+        setIsMobileMode(false);
+      } else if (window.innerWidth <= 768) {
+        setIsMobileMode(true);
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const [activeTab, setActiveTab] = useState<"activities" | "clients" | "settings" | "reports">("activities");
   const [isAdminLocked, setIsAdminLocked] = useState(true);
   const [externalAddTrigger, setExternalAddTrigger] = useState(0);
@@ -745,46 +776,17 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-            {/* Management buttons: Only display on PC management screen, hidden on mobile */}
-            {!isMobileMode && (
-              <>
-                <button
-                  onClick={() => window.location.href = "/api/export-zip"}
-                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 transition-all cursor-pointer shadow-3xs"
-                  title="全ソースコードをZIP形式でダウンロードします"
-                >
-                  <FileCode className="w-3.5 h-3.5 text-purple-600" />
-                  <span>ソースコードZIP</span>
-                </button>
-                <button
-                  onClick={handleExportBackup}
-                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 transition-all cursor-pointer shadow-3xs"
-                  title="全データをJSONファイルとして保存します"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>データ保存 (JSON)</span>
-                </button>
-                <label
-                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/80 transition-all cursor-pointer shadow-3xs"
-                  title="保存したJSONファイルを読み込み復元します"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>データ復元</span>
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={handleImportBackup}
-                    className="hidden"
-                  />
-                </label>
-              </>
-            )}
-
             <div className="flex items-center gap-1 bg-slate-150 p-1 rounded-xl border border-slate-200 selection:bg-transparent shadow-xs">
               <button
                 onClick={() => {
                   setIsMobileMode(false);
                   setActiveTab("activities");
+                  if (typeof window !== "undefined") {
+                    sessionStorage.setItem("care_view_mode", "pc");
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("view", "pc");
+                    window.history.replaceState({}, "", url.toString());
+                  }
                 }}
                 className={`flex items-center gap-1.5 ${isMobileMode ? "text-[11px] px-2.5 py-1" : "text-xs px-3.5 py-1.5"} font-bold rounded-lg cursor-pointer transition-all ${
                   !isMobileMode
@@ -796,7 +798,15 @@ export default function App() {
                 <span>PC 管理者</span>
               </button>
               <button
-                onClick={() => setIsMobileMode(true)}
+                onClick={() => {
+                  setIsMobileMode(true);
+                  if (typeof window !== "undefined") {
+                    sessionStorage.setItem("care_view_mode", "mobile");
+                    const url = new URL(window.location.href);
+                    url.searchParams.set("view", "mobile");
+                    window.history.replaceState({}, "", url.toString());
+                  }
+                }}
                 className={`flex items-center gap-1.5 ${isMobileMode ? "text-[11px] px-2.5 py-1" : "text-xs px-3.5 py-1.5"} font-bold rounded-lg cursor-pointer transition-all ${
                   isMobileMode
                     ? "bg-[#ec4899] text-white shadow-sm border border-pink-600 font-extrabold"

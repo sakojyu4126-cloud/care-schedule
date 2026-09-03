@@ -20,6 +20,14 @@ const PORT = 3000;
 
 app.use(express.json({ limit: "50mb" }));
 
+// Anti-caching middleware for all requests to ensure browsers and mobile devices get fresh data and assets
+app.use((req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  next();
+});
+
 const DATA_STORE_PATH = path.join(process.cwd(), "data_store.json");
 
 interface SyncData {
