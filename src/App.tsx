@@ -12,6 +12,7 @@ import MobileHelperView from "./components/MobileHelperView";
 import ClientMasterTab from "./components/ClientMasterTab";
 import SettingsTab from "./components/SettingsTab";
 import ExtraordinaryReportTab from "./components/ExtraordinaryReportTab";
+import { FirebaseSyncService } from "./lib/syncService";
 import {
   Calendar,
   Smartphone,
@@ -160,11 +161,10 @@ export default function App() {
     return getTodayDateString();
   });
 
+  const syncServiceRef = React.useRef<FirebaseSyncService | null>(null);
   const isApplyingServerSync = React.useRef(false);
   const isInitialSyncDone = React.useRef(false);
-  const hasPendingLocalChanges = React.useRef(false);
   const hasUserChangedDateManually = React.useRef(false);
-  const pushTimerRef = React.useRef<any>(null);
 
   const safeSetItem = (key: string, value: any) => {
     try {
@@ -177,46 +177,56 @@ export default function App() {
   const handleUpdateSettings = (newSettings: AppSettings | ((prev: AppSettings) => AppSettings)) => {
     setSettings(prev => {
       const nextVal = typeof newSettings === "function" ? newSettings(prev) : newSettings;
-      return cleanSettings(nextVal);
+      const cleaned = cleanSettings(nextVal);
+      safeSetItem("care_settings", cleaned);
+      if (!isApplyingServerSync.current) {
+        syncServiceRef.current?.pushSettings(cleaned);
+      }
+      return cleaned;
     });
-    if (!isApplyingServerSync.current) {
-      hasPendingLocalChanges.current = true;
-    }
   };
 
   const handleUpdateActivities = (newActs: DailyActivity[] | ((prev: DailyActivity[]) => DailyActivity[])) => {
     setActivities(prev => {
       const nextVal = typeof newActs === "function" ? newActs(prev) : newActs;
+      safeSetItem("care_activities", nextVal);
+      if (!isApplyingServerSync.current) {
+        const currentDayActs = nextVal.filter(a => a.date === selectedDate);
+        syncServiceRef.current?.pushActivitiesForDate(selectedDate, currentDayActs);
+      }
       return nextVal;
     });
-    if (!isApplyingServerSync.current) {
-      hasPendingLocalChanges.current = true;
-    }
   };
 
   const handleUpdateReports = (newReports: ExtraordinaryReport[] | ((prev: ExtraordinaryReport[]) => ExtraordinaryReport[])) => {
     setReports(prev => {
       const nextVal = typeof newReports === "function" ? newReports(prev) : newReports;
+      safeSetItem("care_extraordinary_reports", nextVal);
+      safeSetItem("has_user_data", "true");
+      if (!isApplyingServerSync.current) {
+        syncServiceRef.current?.pushReports(nextVal);
+      }
       return nextVal;
     });
-    if (!isApplyingServerSync.current) {
-      hasPendingLocalChanges.current = true;
-    }
   };
 
   const handleUpdateFreeStickers = (newStickers: FreeSticker[] | ((prev: FreeSticker[]) => FreeSticker[])) => {
     setFreeStickers(prev => {
       const nextVal = typeof newStickers === "function" ? newStickers(prev) : newStickers;
+      safeSetItem("care_free_stickers", nextVal);
+      if (!isApplyingServerSync.current) {
+        syncServiceRef.current?.pushFreeStickers(nextVal);
+      }
       return nextVal;
     });
-    if (!isApplyingServerSync.current) {
-      hasPendingLocalChanges.current = true;
-    }
   };
 
   const handleDateChange = (newDate: string) => {
     hasUserChangedDateManually.current = true;
     setSelectedDate(newDate);
+    if (syncServiceRef.current) {
+      syncServiceRef.current.setSelectedDate(newDate);
+    }
     if (typeof window !== "undefined" && window.history.replaceState) {
       const url = new URL(window.location.href);
       url.searchParams.set("date", newDate);
@@ -319,201 +329,126 @@ export default function App() {
   }, [freeStickers]);
 
   const handleManualSync = async () => {
-    try {
-      setSyncStatus("syncing");
-      const res = await fetch(`/api/sync?t=${Date.now()}`, {
-        headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
-      });
-      const data = await res.json();
-      
-      if (data.success && data.hasData) {
-        isApplyingServerSync.current = true;
-        hasPendingLocalChanges.current = false;
-        if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
-
-        if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
-        if (Array.isArray(data.activities)) setActivities(data.activities);
-        if (data.settings && typeof data.settings === "object") {
-          const cleaned = cleanSettings(data.settings);
-          setSettings(cleaned);
-          if (isMobileMode && cleaned.managerActiveDate && !hasUserChangedDateManually.current) {
-            const params = new URLSearchParams(window.location.search);
-            if (!params.get("date")) {
-              setSelectedDate(cleaned.managerActiveDate);
-            }
-          }
-        }
-        if (Array.isArray(data.reports)) setReports(data.reports);
-        if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
-        
-        const syncTime = data.updatedAt || Date.now();
-        setLastSyncTime(syncTime);
-        lastSyncTimeRef.current = syncTime;
-        safeSetItem("care_last_sync_time", String(syncTime));
-        safeSetItem("has_user_data", "true");
-        setSyncStatus("synced");
-        setTimeout(() => {
-          isApplyingServerSync.current = false;
-        }, 250);
-      } else {
-        setSyncStatus("synced");
-      }
-    } catch (err) {
-      console.error("Manual sync error:", err);
-      setSyncStatus("offline");
+    if (syncServiceRef.current) {
+      await syncServiceRef.current.forceSync();
     }
   };
 
   useEffect(() => {
-    const fetchInitialData = async () => {
-      try {
-        setSyncStatus("syncing");
-        const res = await fetch(`/api/sync?t=${Date.now()}`, {
-          headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
-        });
-        const data = await res.json();
-        
-        if (data.success && data.hasData) {
-          isApplyingServerSync.current = true;
-          hasPendingLocalChanges.current = false;
-          if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    const service = new FirebaseSyncService(clientId, isMobileMode, selectedDate);
+    syncServiceRef.current = service;
 
-          if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
-          if (Array.isArray(data.activities)) setActivities(data.activities);
-          if (data.settings && typeof data.settings === "object") {
-            const cleaned = cleanSettings(data.settings);
-            setSettings(cleaned);
-            if (isMobileMode && cleaned.managerActiveDate && !hasUserChangedDateManually.current) {
-              const params = new URLSearchParams(window.location.search);
-              if (!params.get("date")) {
-                setSelectedDate(cleaned.managerActiveDate);
-              }
-            }
-          }
-          if (Array.isArray(data.reports)) setReports(data.reports);
-          if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
-          
-          const syncTime = data.updatedAt || Date.now();
-          setLastSyncTime(syncTime);
-          lastSyncTimeRef.current = syncTime;
-          safeSetItem("care_last_sync_time", String(syncTime));
-          safeSetItem("has_user_data", "true");
-          setSyncStatus("synced");
-          setTimeout(() => {
-            isApplyingServerSync.current = false;
-          }, 250);
-        } else {
-          if (localStorage.getItem("has_user_data") === "true") {
-            const now = Date.now();
-            const payload = {
-              clients,
-              activities,
-              settings,
-              reports,
-              freeStickers,
-              updatedAt: now,
-              lastUpdatedBy: clientId
-            };
-            const postRes = await fetch("/api/sync", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload)
-            });
-            const postData = await postRes.json();
-            if (postData.success) {
-              const syncTime = postData.updatedAt || now;
-              setLastSyncTime(syncTime);
-              lastSyncTimeRef.current = syncTime;
-              safeSetItem("care_last_sync_time", String(syncTime));
-              setSyncStatus("synced");
-            }
-          } else {
-            setSyncStatus("synced");
+    service.setCallbacks({
+      onClientsUpdate: (newClients) => {
+        isApplyingServerSync.current = true;
+        setClients(newClients);
+        safeSetItem("care_clients", newClients);
+        safeSetItem("has_user_data", "true");
+        setTimeout(() => { isApplyingServerSync.current = false; }, 200);
+      },
+      onSettingsUpdate: (newSettings) => {
+        isApplyingServerSync.current = true;
+        setSettings(newSettings);
+        safeSetItem("care_settings", newSettings);
+        if (isMobileMode && newSettings.managerActiveDate && !hasUserChangedDateManually.current) {
+          const params = new URLSearchParams(window.location.search);
+          if (!params.get("date")) {
+            setSelectedDate(newSettings.managerActiveDate);
           }
         }
-      } catch (err) {
-        console.error("Failed to load sync data:", err);
-        setSyncStatus("offline");
-      } finally {
-        isInitialSyncDone.current = true;
+        setTimeout(() => { isApplyingServerSync.current = false; }, 200);
+      },
+      onReportsUpdate: (newReports) => {
+        isApplyingServerSync.current = true;
+        setReports(newReports);
+        safeSetItem("care_extraordinary_reports", newReports);
+        safeSetItem("has_user_data", "true");
+        setTimeout(() => { isApplyingServerSync.current = false; }, 200);
+      },
+      onFreeStickersUpdate: (newStickers) => {
+        isApplyingServerSync.current = true;
+        setFreeStickers(newStickers);
+        safeSetItem("care_free_stickers", newStickers);
+        setTimeout(() => { isApplyingServerSync.current = false; }, 200);
+      },
+      onActivitiesUpdate: (actsForDate, date) => {
+        isApplyingServerSync.current = true;
+        setActivities(prev => {
+          const filtered = prev.filter(a => a.date !== date);
+          const merged = [...filtered, ...actsForDate];
+          safeSetItem("care_activities", merged);
+          return merged;
+        });
+        setTimeout(() => { isApplyingServerSync.current = false; }, 200);
+      },
+      onStatusChange: (status) => {
+        setSyncStatus(status);
+        if (status === "synced") {
+          const now = Date.now();
+          setLastSyncTime(now);
+          lastSyncTimeRef.current = now;
+          safeSetItem("care_last_sync_time", String(now));
+        }
       }
-    };
-    fetchInitialData();
+    });
 
-    // Auto re-sync when smartphone/browser tab becomes visible or receives focus
+    service.initialize().then(initData => {
+      if (initData) {
+        isApplyingServerSync.current = true;
+        if (initData.clients && initData.clients.length >= 40) {
+          setClients(initData.clients);
+          safeSetItem("care_clients", initData.clients);
+        }
+        if (initData.settings) {
+          setSettings(initData.settings);
+          safeSetItem("care_settings", initData.settings);
+          if (isMobileMode && initData.settings.managerActiveDate && !hasUserChangedDateManually.current) {
+            const params = new URLSearchParams(window.location.search);
+            if (!params.get("date")) {
+              setSelectedDate(initData.settings.managerActiveDate);
+            }
+          }
+        }
+        if (initData.reports && initData.reports.length > 0) {
+          setReports(initData.reports);
+          safeSetItem("care_extraordinary_reports", initData.reports);
+        }
+        if (initData.freeStickers && initData.freeStickers.length > 0) {
+          setFreeStickers(initData.freeStickers);
+          safeSetItem("care_free_stickers", initData.freeStickers);
+        }
+        if (initData.activities && initData.activities.length > 0) {
+          setActivities(initData.activities);
+          safeSetItem("care_activities", initData.activities);
+        }
+        safeSetItem("has_user_data", "true");
+        setTimeout(() => { isApplyingServerSync.current = false; }, 300);
+      }
+      isInitialSyncDone.current = true;
+    });
+
+    // Re-check sync when browser tab or phone wakes up
     const handleVisibilityOrFocus = () => {
       if (document.visibilityState === "visible") {
-        fetchInitialData();
+        service.forceSync();
       }
     };
-
     window.addEventListener("focus", handleVisibilityOrFocus);
     document.addEventListener("visibilitychange", handleVisibilityOrFocus);
 
     return () => {
       window.removeEventListener("focus", handleVisibilityOrFocus);
       document.removeEventListener("visibilitychange", handleVisibilityOrFocus);
+      service.destroy();
     };
-  }, []);
+  }, [clientId]);
 
+  // Keep mobile mode synced with service
   useEffect(() => {
-    let active = true;
-    const pollSync = async () => {
-      try {
-        const sinceParam = lastSyncTimeRef.current > 0 ? `?since=${lastSyncTimeRef.current}&t=${Date.now()}` : `?t=${Date.now()}`;
-        const res = await fetch(`/api/sync${sinceParam}`, {
-          headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
-        });
-        const data = await res.json();
-        if (!active) return;
-
-        if (data.success && data.hasData) {
-          if (data.updated) {
-            if (data.lastUpdatedBy !== clientId || isMobileMode) {
-              // Seamless background update without disturbing user
-              isApplyingServerSync.current = true;
-              hasPendingLocalChanges.current = false;
-              if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
-
-              if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
-              if (Array.isArray(data.activities)) setActivities(data.activities);
-              if (data.settings && typeof data.settings === "object") {
-                const cleaned = cleanSettings(data.settings);
-                setSettings(cleaned);
-                if (isMobileMode && cleaned.managerActiveDate && !hasUserChangedDateManually.current) {
-                  const params = new URLSearchParams(window.location.search);
-                  if (!params.get("date")) {
-                    setSelectedDate(cleaned.managerActiveDate);
-                  }
-                }
-              }
-              if (Array.isArray(data.reports)) setReports(data.reports);
-              if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
-              setTimeout(() => {
-                isApplyingServerSync.current = false;
-              }, 250);
-            }
-            const syncTime = data.updatedAt || Date.now();
-            setLastSyncTime(syncTime);
-            lastSyncTimeRef.current = syncTime;
-            safeSetItem("care_last_sync_time", String(syncTime));
-            setSyncStatus("synced");
-          } else {
-            setSyncStatus("synced");
-          }
-        }
-      } catch (err) {
-        console.error("Failed to poll sync data:", err);
-        setSyncStatus("offline");
-      }
-    };
-
-    const interval = setInterval(pollSync, 1500);
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [clientId, isMobileMode]);
+    if (syncServiceRef.current) {
+      syncServiceRef.current.setIsMobileMode(isMobileMode);
+    }
+  }, [isMobileMode]);
 
   const handleExportBackup = () => {
     const data = {
@@ -614,26 +549,16 @@ export default function App() {
         const now = Date.now();
         localStorage.setItem("care_last_sync_time", String(now));
 
-        const payload = {
-          clients: newClients,
-          activities: newActivities,
-          settings: newSettings,
-          reports: newReports,
-          freeStickers: newFreeStickers,
-          updatedAt: now,
-          lastUpdatedBy: clientId
-        };
-        const postRes = await fetch("/api/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const postData = await postRes.json();
-        if (postData.success) {
-          setLastSyncTime(postData.updatedAt || now);
-          localStorage.setItem("care_last_sync_time", String(postData.updatedAt || now));
-          setSyncStatus("synced");
+        if (syncServiceRef.current) {
+          syncServiceRef.current.pushClients(newClients);
+          syncServiceRef.current.pushSettings(newSettings);
+          syncServiceRef.current.pushReports(newReports);
+          syncServiceRef.current.pushFreeStickers(newFreeStickers);
+          syncServiceRef.current.pushAllActivities(newActivities);
         }
+        setLastSyncTime(now);
+        safeSetItem("care_last_sync_time", String(now));
+        setSyncStatus("synced");
 
         setTimeout(() => {
           isApplyingServerSync.current = false;
@@ -649,85 +574,43 @@ export default function App() {
     e.target.value = "";
   };
 
-  useEffect(() => {
-    if (!isInitialSyncDone.current) return;
-    if (isApplyingServerSync.current) return;
-    if (!hasPendingLocalChanges.current) return;
-
-    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
-    pushTimerRef.current = setTimeout(async () => {
-      if (isApplyingServerSync.current || !hasPendingLocalChanges.current) return;
-      hasPendingLocalChanges.current = false;
-
-      try {
-        setSyncStatus("syncing");
-        const now = Date.now();
-        const payload = isMobileMode
-          ? {
-              activities,
-              reports,
-              updatedAt: now,
-              lastUpdatedBy: "mobile_" + clientId
-            }
-          : {
-              clients,
-              activities,
-              settings,
-              reports,
-              freeStickers,
-              updatedAt: now,
-              lastUpdatedBy: clientId
-            };
-        const res = await fetch("/api/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (data.success) {
-          const syncTime = data.updatedAt || now;
-          setLastSyncTime(syncTime);
-          lastSyncTimeRef.current = syncTime;
-          safeSetItem("care_last_sync_time", String(syncTime));
-          setSyncStatus("synced");
-        }
-      } catch (err) {
-        console.error("Failed to push sync data:", err);
-        setSyncStatus("offline");
-      }
-    }, 350);
-
-    return () => {
-      if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
-    };
-  }, [clients, activities, settings, reports, freeStickers, clientId, isMobileMode]);
-
   // Master-to-Daily Synchronization:
   // When clients master updates (add, remove, edit weekly services), immediately sync current and future activities (today onwards).
   // Strictly protects past activities prior to today (before getTodayDateString()) without deleting or inserting cards.
   const handleUpdateClients = (newClients: Client[]) => {
     setClients(newClients);
-    setActivities(prevActivities => syncActivitiesWithClients(prevActivities, newClients, settings, getTodayDateString(), [selectedDate]));
+    safeSetItem("care_clients", newClients);
+    safeSetItem("has_user_data", "true");
     if (!isApplyingServerSync.current) {
-      hasPendingLocalChanges.current = true;
+      syncServiceRef.current?.pushClients(newClients);
     }
+    setActivities(prevActivities => {
+      const nextActs = syncActivitiesWithClients(prevActivities, newClients, settings, getTodayDateString(), [selectedDate]);
+      safeSetItem("care_activities", nextActs);
+      if (!isApplyingServerSync.current) {
+        const currentDayActs = nextActs.filter(a => a.date === selectedDate);
+        syncServiceRef.current?.pushActivitiesForDate(selectedDate, currentDayActs);
+      }
+      return nextActs;
+    });
   };
 
   const handleExtractFromWeekly = () => {
     const extracted = extractDailyActivities(selectedDate, clients, settings);
-    setActivities(prev => [
-      ...prev.filter(act => act.date !== selectedDate),
-      ...extracted
-    ]);
-    if (!isApplyingServerSync.current) {
-      hasPendingLocalChanges.current = true;
-    }
+    setActivities(prev => {
+      const nextActs = [
+        ...prev.filter(act => act.date !== selectedDate),
+        ...extracted
+      ];
+      safeSetItem("care_activities", nextActs);
+      if (!isApplyingServerSync.current) {
+        syncServiceRef.current?.pushActivitiesForDate(selectedDate, extracted);
+      }
+      return nextActs;
+    });
   };
 
   const handleToggleCheck = (id: string) => {
-    if (!isApplyingServerSync.current) {
-      hasPendingLocalChanges.current = true;
-    }
     setActivities(prev => {
       const exists = prev.some(act => act.id === id);
       let nextActs: DailyActivity[];
@@ -741,18 +624,11 @@ export default function App() {
           ...updated
         ];
       }
-
-      if (isMobileMode) {
-        fetch("/api/sync", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            activities: nextActs,
-            lastUpdatedBy: "mobile_check_" + clientId
-          })
-        }).catch(e => console.error("Mobile checkmark sync error:", e));
+      safeSetItem("care_activities", nextActs);
+      if (!isApplyingServerSync.current) {
+        const currentDayActs = nextActs.filter(a => a.date === selectedDate);
+        syncServiceRef.current?.pushActivitiesForDate(selectedDate, currentDayActs);
       }
-
       return nextActs;
     });
   };

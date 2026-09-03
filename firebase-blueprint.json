@@ -1,0 +1,29 @@
+{
+  "entities": {
+    "care_system": {
+      "title": "Care System Data",
+      "description": "Shared operational documents: clients, settings, reports, freeStickers, metadata",
+      "fields": {
+        "updatedAt": {
+          "type": "number",
+          "description": "Unix timestamp of last modification"
+        }
+      }
+    },
+    "care_activities": {
+      "title": "Daily Care Activities",
+      "description": "Daily schedule records partitioned by date",
+      "fields": {
+        "date": {
+          "type": "string",
+          "description": "Target date string (YYYY-MM-DD)"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Unix timestamp of last modification"
+        }
+      }
+    }
+  },
+  "roles": {}
+}
