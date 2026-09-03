@@ -86,6 +86,9 @@ export function normalizeHelperName(name?: string | null): string {
   if (s === "吉田J" || s === "吉田 J" || s === "吉田ｼﾞｬｯｷｰ" || s === "吉田ジャッキー") return "吉田ジャッキー";
   if (s === "安田眞弓" || s === "安田真弓") return "安田真弓";
   if (s === "斎藤公明" || s === "齋藤公明") return "齋藤公明";
+  if (s === "書川英子" || s === "書川" || s === "晝川" || s === "晝川英子") return "晝川英子";
+  if (s === "西條広一" || s === "西条広一" || s === "西条廣一" || s === "西條廣一") return "西條廣一";
+  if (s === "水田" || s === "水田ゆり子" || s === "水田祐里子") return "水田祐里子";
 
   return s;
 }
@@ -143,7 +146,7 @@ export function cleanSettings(settings: AppSettings): AppSettings {
     for (const [dateStr, routes] of Object.entries(cleanedDateHelperRoutes)) {
       newOverrides[dateStr] = routes.map(r => {
         const norm = normalizeHelperName(r.name);
-        const isValid = !isInvalidHelperName(norm) && norm !== "未割り当て" && norm !== "未割当" && (validHelperSet.size === 0 || validHelperSet.has(norm));
+        const isValid = !isInvalidHelperName(norm) && norm !== "未割り当て" && norm !== "未割当" && norm.trim().length > 0;
         return {
           ...r,
           name: isValid ? norm : "未割り当て"
@@ -177,7 +180,7 @@ export function resolveHelperRoutesForDate(
   if (dateOverrides && dateOverrides.length > 0) {
     return dateOverrides.map(r => {
       const norm = normalizeHelperName(r.name);
-      const isValid = !isInvalidHelperName(norm) && norm !== "未割り当て" && norm !== "未割当" && (activeHelperSet.size === 0 || activeHelperSet.has(norm));
+      const isValid = !isInvalidHelperName(norm) && norm !== "未割り当て" && norm !== "未割当" && norm.trim().length > 0;
       return { ...r, name: isValid ? norm : "未割り当て" };
     });
   }

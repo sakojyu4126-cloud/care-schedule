@@ -127681,7 +127681,8 @@
       "A3",
       "C1",
       "C2"
-    ]
+    ],
+    "managerActiveDate": "2026-09-03"
   },
   "reports": [
     {
@@ -128585,6 +128586,6 @@
     }
   ],
   "freeStickers": [],
-  "updatedAt": 1788426435670,
-  "lastUpdatedBy": "mobile_report_unknown"
+  "updatedAt": 1788431535652,
+  "lastUpdatedBy": "nn6wg2xipbm"
 }

@@ -8,6 +8,40 @@
     <meta http-equiv="Expires" content="0" />
     <meta name="google" content="notranslate" />
     <title>介護サービス管理</title>
+    <script>
+      (function() {
+        function purgeVercelToolbar() {
+          try {
+            var selectors = [
+              'vercel-live-feedback',
+              '#vercel-live-feedback-host',
+              '[data-vercel-toolbar]',
+              'div[class*="vercel-toolbar"]',
+              'div[id*="vercel-toolbar"]',
+              'button[aria-label*="Vercel"]',
+              'button[data-testid*="feedback"]'
+            ];
+            selectors.forEach(function(sel) {
+              var nodes = document.querySelectorAll(sel);
+              nodes.forEach(function(node) {
+                if (node && node.parentNode) {
+                  node.parentNode.removeChild(node);
+                }
+              });
+            });
+          } catch (e) {}
+        }
+        if (typeof MutationObserver !== 'undefined') {
+          var obs = new MutationObserver(function() {
+            purgeVercelToolbar();
+          });
+          obs.observe(document.documentElement, { childList: true, subtree: true });
+        }
+        window.addEventListener('DOMContentLoaded', purgeVercelToolbar);
+        window.addEventListener('load', purgeVercelToolbar);
+        setInterval(purgeVercelToolbar, 1000);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

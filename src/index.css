@@ -105,3 +105,24 @@ input, textarea {
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
+
+/* Completely suppress and eliminate Vercel Toolbar & Feedback overlay */
+vercel-live-feedback,
+#vercel-live-feedback-host,
+[data-vercel-toolbar],
+div[class*="vercel-toolbar"],
+div[id*="vercel-toolbar"],
+button[aria-label*="Vercel"],
+button[data-testid*="feedback"],
+svg[data-testid="geist-icon"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  position: absolute !important;
+  top: -99999px !important;
+  left: -99999px !important;
+  z-index: -99999 !important;
+}

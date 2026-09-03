@@ -274,8 +274,6 @@ export default function App() {
         setIsMobileMode(true);
       } else if (sessionStorage.getItem("care_view_mode") === "pc") {
         setIsMobileMode(false);
-      } else if (window.innerWidth <= 768) {
-        setIsMobileMode(true);
       }
     };
     window.addEventListener("resize", handleResize);
@@ -298,6 +296,7 @@ export default function App() {
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
   const lastSyncTimeRef = React.useRef<number>(0);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error" | "offline">("synced");
+  const [syncNotice, setSyncNotice] = useState<string | null>(null);
 
   const markHasUserData = () => {
     safeSetItem("has_user_data", "true");
@@ -330,7 +329,15 @@ export default function App() {
 
   const handleManualSync = async () => {
     if (syncServiceRef.current) {
-      await syncServiceRef.current.forceSync();
+      setSyncStatus("syncing");
+      setSyncNotice("クラウド(Firebase)と同期中...");
+      const ok = await syncServiceRef.current.forceSync();
+      if (ok) {
+        setSyncNotice("✅ クラウド(Firebase)と最新同期しました！");
+      } else {
+        setSyncNotice("最新同期を実行しました");
+      }
+      setTimeout(() => setSyncNotice(null), 3000);
     }
   };
 
@@ -344,6 +351,8 @@ export default function App() {
         setClients(newClients);
         safeSetItem("care_clients", newClients);
         safeSetItem("has_user_data", "true");
+        setSyncNotice("🔄 相手側の利用者変更を同期しました");
+        setTimeout(() => setSyncNotice(null), 3000);
         setTimeout(() => { isApplyingServerSync.current = false; }, 200);
       },
       onSettingsUpdate: (newSettings) => {
@@ -356,6 +365,8 @@ export default function App() {
             setSelectedDate(newSettings.managerActiveDate);
           }
         }
+        setSyncNotice("🔄 相手側のシフト/設定変更を同期しました");
+        setTimeout(() => setSyncNotice(null), 3000);
         setTimeout(() => { isApplyingServerSync.current = false; }, 200);
       },
       onReportsUpdate: (newReports) => {
@@ -363,6 +374,8 @@ export default function App() {
         setReports(newReports);
         safeSetItem("care_extraordinary_reports", newReports);
         safeSetItem("has_user_data", "true");
+        setSyncNotice("🔄 相手側の臨時報告を同期しました");
+        setTimeout(() => setSyncNotice(null), 3000);
         setTimeout(() => { isApplyingServerSync.current = false; }, 200);
       },
       onFreeStickersUpdate: (newStickers) => {
@@ -379,6 +392,8 @@ export default function App() {
           safeSetItem("care_activities", merged);
           return merged;
         });
+        setSyncNotice("🔄 相手側の活動表/チェック変更を同期しました");
+        setTimeout(() => setSyncNotice(null), 3000);
         setTimeout(() => { isApplyingServerSync.current = false; }, 200);
       },
       onStatusChange: (status) => {
@@ -693,9 +708,38 @@ export default function App() {
                 <span>スマホ表示</span>
               </button>
             </div>
+
+            {/* Global Realtime Sync Badge & Manual Trigger */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-xl shadow-2xs">
+              <div className="flex items-center gap-1.5 font-bold">
+                <span className={`w-2 h-2 rounded-full ${syncStatus === "syncing" ? "bg-amber-400 animate-ping" : syncStatus === "synced" ? "bg-emerald-500" : "bg-red-500"}`} />
+                <span className="text-slate-700 text-[11px] hidden sm:inline">
+                  {syncStatus === "syncing" ? "同期中..." : syncStatus === "synced" ? "PCと常時連動中" : "オフライン"}
+                </span>
+                <span className="text-[9px] font-semibold px-1 py-0.2 rounded-full bg-slate-200/70 text-slate-600">
+                  v2.4最新
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleManualSync}
+                className="flex items-center gap-1 px-2 py-0.5 bg-white hover:bg-slate-100 active:bg-blue-50 text-slate-700 active:text-blue-700 text-[11px] font-bold rounded-lg border border-slate-200 shadow-2xs transition-all cursor-pointer touch-manipulation active:scale-95"
+                title="PCとスマホの最新データをクラウド経由で同期します"
+              >
+                <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? "animate-spin text-blue-600" : "text-slate-600"}`} />
+                <span>最新同期</span>
+              </button>
+            </div>
           </div>
 
         </div>
+
+        {/* Sync Toast Notification */}
+        {syncNotice && (
+          <div className="fixed top-14 right-4 z-50 bg-slate-900/95 text-white px-4 py-2.5 rounded-xl text-xs font-bold shadow-xl border border-slate-700 backdrop-blur-xs flex items-center gap-2 animate-bounce">
+            <span>{syncNotice}</span>
+          </div>
+        )}
       </header>
 
       {/* PC Admin View Layout */}
