@@ -756,32 +756,14 @@ export default function SettingsTab({
           </div>
         )}
 
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100/80 pb-3">
+        <div className="flex items-center justify-between gap-3 border-b border-indigo-100/80 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
               <Database className="w-4 h-4" />
             </div>
-            <div>
-              <h3 className="text-sm font-black text-slate-800 flex items-center gap-1.5">
-                <span>全データの完全保存・復元 ＆ ソースコードZIP出力</span>
-              </h3>
-              <p className="text-[11px] text-slate-500">
-                7月以降の全期間データ（利用者マスタ、全活動記録、臨時報告、シフト配置）を安全にバックアップ・復元できます
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 text-[11px]">
-            <span className="bg-white border border-slate-200 text-slate-700 px-2.5 py-1 rounded-full font-bold shadow-3xs">
-              👥 利用者: {clients.length}名
-            </span>
-            <span className="bg-white border border-slate-200 text-indigo-700 px-2.5 py-1 rounded-full font-bold shadow-3xs">
-              📅 スケジュール: {datesCount ? `${datesCount}日分` : "全期間"} {activitiesCount ? `(${activitiesCount}件)` : ""}
-            </span>
-            <span className="bg-emerald-50 border border-emerald-200 text-emerald-700 px-2.5 py-1 rounded-full font-bold shadow-3xs flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-              Firebase連携
-            </span>
+            <h3 className="text-sm font-black text-slate-800">
+              全データの完全保存・復元 ＆ ソースコードZIP出力
+            </h3>
           </div>
         </div>
 
@@ -850,18 +832,6 @@ export default function SettingsTab({
             {isDownloadingZip ? <Loader2 className="w-4 h-4 animate-spin" /> : <FolderArchive className="w-4 h-4" />}
             <span>{isDownloadingZip ? "ZIP作成中..." : "完全ソースコードをZIPダウンロード (.zip)"}</span>
           </button>
-        </div>
-
-        <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-3 text-[11px] text-amber-900 leading-relaxed space-y-1">
-          <div className="font-bold flex items-center gap-1.5 text-amber-950">
-            <span>💡 データ復元とDropbox保存ファイルについて:</span>
-          </div>
-          <p>
-            ・「保存ファイルから全復元」または「JSONテキスト直接貼り付け」を実行すると、お持ちのバックアップに含まれる7月以降の全期間データが安全に復元され、同時にFirebaseクラウドへ一括反映されます。スマートフォン側のヘルパー画面とも即座に完全同期されます。
-          </p>
-          <p className="text-amber-800 text-[10px]">
-            ※ Dropbox内のファイルを選択する際、Dropboxの「スマートシンク（オンラインのみ）」設定になっているとファイルが0バイトとして取得される場合があります。その場合はファイルをデスクトップ等にコピーしてから選択するか、「JSONテキスト直接貼り付け」をご利用ください。
-          </p>
         </div>
       </div>
 

@@ -930,27 +930,19 @@ export default function App() {
               </button>
             </div>
 
-            {/* Global Realtime Sync Badge & Manual Trigger */}
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 px-2 py-1 rounded-xl shadow-2xs">
-              <div className="flex items-center gap-1.5 font-bold">
-                <span className={`w-2 h-2 rounded-full ${syncStatus === "syncing" ? "bg-amber-400 animate-ping" : syncStatus === "synced" ? "bg-emerald-500" : "bg-red-500"}`} />
-                <span className="text-slate-700 text-[11px] hidden sm:inline">
-                  {syncStatus === "syncing" ? "同期中..." : syncStatus === "synced" ? "PCと常時連動中" : "オフライン"}
-                </span>
-                <span className="text-[9px] font-semibold px-1 py-0.2 rounded-full bg-slate-200/70 text-slate-600">
-                  v2.4最新
-                </span>
-              </div>
+            {/* Global Realtime Sync Manual Trigger (PC only, without verbose text) */}
+            {!isMobileMode && (
               <button
                 type="button"
                 onClick={handleManualSync}
-                className="flex items-center gap-1 px-2 py-0.5 bg-white hover:bg-slate-100 active:bg-blue-50 text-slate-700 active:text-blue-700 text-[11px] font-bold rounded-lg border border-slate-200 shadow-2xs transition-all cursor-pointer touch-manipulation active:scale-95"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-slate-50 active:bg-blue-50 text-slate-700 active:text-blue-700 text-xs font-bold rounded-xl border border-slate-200 shadow-2xs transition-all cursor-pointer touch-manipulation active:scale-95"
                 title="PCとスマホの最新データをクラウド経由で同期します"
               >
-                <RefreshCw className={`w-3 h-3 ${syncStatus === "syncing" ? "animate-spin text-blue-600" : "text-slate-600"}`} />
+                <span className={`w-2 h-2 rounded-full ${syncStatus === "syncing" ? "bg-amber-400 animate-ping" : syncStatus === "synced" ? "bg-emerald-500" : "bg-red-500"}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${syncStatus === "syncing" ? "animate-spin text-blue-600" : "text-slate-600"}`} />
                 <span>最新同期</span>
               </button>
-            </div>
+            )}
           </div>
 
         </div>
@@ -1086,17 +1078,6 @@ export default function App() {
                       className="px-4 py-2 hover:bg-slate-100 active:bg-slate-200 rounded-xl text-indigo-600 font-bold transition-colors cursor-pointer border border-slate-200 shadow-2xs text-lg select-none"
                     >
                       ▶
-                    </button>
-
-                    <button
-                      onClick={() => handleDateChange(getTodayDateString())}
-                      className={`px-3.5 py-2 font-bold rounded-xl text-xs transition-all cursor-pointer border shadow-2xs select-none ${
-                        selectedDate === getTodayDateString()
-                          ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
-                          : "bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200"
-                      }`}
-                    >
-                      今日
                     </button>
                   </div>
 
