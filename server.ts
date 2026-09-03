@@ -156,6 +156,18 @@ app.get("/api/sync", (req, res) => {
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
 
+  const since = req.query.since ? Number(req.query.since) : 0;
+  // If client provides a valid since timestamp and server hasn't updated, return tiny 304-equivalent payload
+  if (since > 0 && serverState.updatedAt > 0 && serverState.updatedAt <= since) {
+    return res.json({
+      success: true,
+      hasData: serverState.hasData,
+      updated: false,
+      updatedAt: serverState.updatedAt,
+      lastUpdatedBy: serverState.lastUpdatedBy || ""
+    });
+  }
+
   if (serverState.settings) {
     serverState.settings = sanitizeSettings(serverState.settings);
   }
@@ -163,6 +175,7 @@ app.get("/api/sync", (req, res) => {
   res.json({
     success: true,
     hasData: serverState.hasData,
+    updated: true,
     clients: serverState.clients,
     activities: serverState.activities,
     settings: serverState.settings,
@@ -177,32 +190,64 @@ app.post("/api/sync", (req, res) => {
   try {
     const { clients, activities, settings, reports, freeStickers, lastUpdatedBy } = req.body;
 
-    // Safety check: Do not allow replacing production 50+ clients with legacy small/mock clients list
-    if (Array.isArray(clients) && clients.length < 50 && serverState.clients && serverState.clients.length >= 50) {
-      console.warn("Ignored sync POST with fewer clients than production master.");
-      return res.json({
-        success: true,
-        hasData: serverState.hasData,
-        updatedAt: serverState.updatedAt,
-        lastUpdatedBy: serverState.lastUpdatedBy || ""
-      });
+    let hasChanges = false;
+    let nextClients = serverState.clients;
+    let nextActivities = serverState.activities;
+    let nextSettings = serverState.settings;
+    let nextReports = serverState.reports;
+    let nextFreeStickers = serverState.freeStickers;
+
+    // 1. Clients update: Protect production 50+ master list from accidental wiping
+    if (Array.isArray(clients) && clients.length >= 50) {
+      nextClients = clients;
+      hasChanges = true;
+    } else if (Array.isArray(clients) && clients.length > 0 && (!serverState.clients || serverState.clients.length === 0)) {
+      nextClients = clients;
+      hasChanges = true;
     }
 
-    const cleanedSettings = sanitizeSettings(settings || serverState.settings);
+    // 2. Activities update
+    if (Array.isArray(activities)) {
+      nextActivities = activities;
+      hasChanges = true;
+    }
 
-    serverState = {
-      hasData: true,
-      clients: Array.isArray(clients) && clients.length > 0 ? clients : serverState.clients,
-      activities: Array.isArray(activities) ? activities : serverState.activities,
-      settings: cleanedSettings,
-      reports: Array.isArray(reports) ? reports : serverState.reports,
-      freeStickers: Array.isArray(freeStickers) ? freeStickers : serverState.freeStickers,
-      updatedAt: Date.now(),
-      lastUpdatedBy: lastUpdatedBy || "client_update"
-    };
+    // 3. Settings update
+    if (settings && typeof settings === "object") {
+      nextSettings = sanitizeSettings({
+        ...(serverState.settings || {}),
+        ...settings
+      });
+      hasChanges = true;
+    }
 
-    fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
-    console.log("Saved new serverState. updatedAt:", serverState.updatedAt, "by:", serverState.lastUpdatedBy, "activities:", serverState.activities.length);
+    // 4. Reports update
+    if (Array.isArray(reports)) {
+      nextReports = reports;
+      hasChanges = true;
+    }
+
+    // 5. Free stickers
+    if (Array.isArray(freeStickers)) {
+      nextFreeStickers = freeStickers;
+      hasChanges = true;
+    }
+
+    if (hasChanges) {
+      serverState = {
+        hasData: true,
+        clients: nextClients,
+        activities: nextActivities,
+        settings: nextSettings,
+        reports: nextReports,
+        freeStickers: nextFreeStickers,
+        updatedAt: Date.now(),
+        lastUpdatedBy: lastUpdatedBy || "client_sync"
+      };
+
+      fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
+      console.log(`Saved sync data. By: ${serverState.lastUpdatedBy}, updatedAt: ${serverState.updatedAt}, reports: ${serverState.reports.length}`);
+    }
 
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     res.json({
@@ -236,8 +281,9 @@ app.post("/api/report", (req, res) => {
     serverState.lastUpdatedBy = "mobile_report_" + (newReport.helperName || "unknown");
 
     fs.writeFileSync(DATA_STORE_PATH, JSON.stringify(serverState, null, 2), "utf-8");
-    console.log("Saved new report from mobile. Total reports:", updatedReports.length);
+    console.log("Saved new report from mobile. Total reports:", updatedReports.length, "updatedAt:", serverState.updatedAt);
 
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
     res.json({
       success: true,
       updatedAt: serverState.updatedAt,

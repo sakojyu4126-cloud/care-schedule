@@ -163,7 +163,26 @@ export default function App() {
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [selectedDate, setSelectedDate] = useState(() => getTodayDateString());
+  const [selectedDate, setSelectedDate] = useState(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlDate = params.get("date");
+      if (urlDate && /^\d{4}-\d{2}-\d{2}$/.test(urlDate)) {
+        return urlDate;
+      }
+    }
+    return getTodayDateString();
+  });
+
+  const handleDateChange = (newDate: string) => {
+    setSelectedDate(newDate);
+    if (typeof window !== "undefined" && window.history.replaceState) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("date", newDate);
+      window.history.replaceState({}, "", url.toString());
+    }
+  };
+
   const [isMobileMode, setIsMobileMode] = useState(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
@@ -189,6 +208,7 @@ export default function App() {
   });
 
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
+  const lastSyncTimeRef = React.useRef<number>(0);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error" | "offline">("synced");
   const [showQrModal, setShowQrModal] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
@@ -228,13 +248,13 @@ export default function App() {
     try {
       setSyncStatus("syncing");
       const res = await fetch(`/api/sync?t=${Date.now()}`, {
-        headers: { "Cache-Control": "no-cache" }
+        headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
       });
       const data = await res.json();
       
       if (data.success && data.hasData) {
         isApplyingServerSync.current = true;
-        if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
+        if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
         if (Array.isArray(data.activities)) setActivities(data.activities);
         if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
         if (Array.isArray(data.reports)) setReports(data.reports);
@@ -242,6 +262,7 @@ export default function App() {
         
         const syncTime = data.updatedAt || Date.now();
         setLastSyncTime(syncTime);
+        lastSyncTimeRef.current = syncTime;
         localStorage.setItem("care_last_sync_time", String(syncTime));
         localStorage.setItem("has_user_data", "true");
         setSyncStatus("synced");
@@ -262,13 +283,13 @@ export default function App() {
       try {
         setSyncStatus("syncing");
         const res = await fetch(`/api/sync?t=${Date.now()}`, {
-          headers: { "Cache-Control": "no-cache" }
+          headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
         });
         const data = await res.json();
         
         if (data.success && data.hasData) {
           isApplyingServerSync.current = true;
-          if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
+          if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
           if (Array.isArray(data.activities)) setActivities(data.activities);
           if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
           if (Array.isArray(data.reports)) setReports(data.reports);
@@ -276,6 +297,7 @@ export default function App() {
           
           const syncTime = data.updatedAt || Date.now();
           setLastSyncTime(syncTime);
+          lastSyncTimeRef.current = syncTime;
           localStorage.setItem("care_last_sync_time", String(syncTime));
           localStorage.setItem("has_user_data", "true");
           setSyncStatus("synced");
@@ -301,8 +323,10 @@ export default function App() {
             });
             const postData = await postRes.json();
             if (postData.success) {
-              setLastSyncTime(postData.updatedAt || now);
-              localStorage.setItem("care_last_sync_time", String(postData.updatedAt || now));
+              const syncTime = postData.updatedAt || now;
+              setLastSyncTime(syncTime);
+              lastSyncTimeRef.current = syncTime;
+              localStorage.setItem("care_last_sync_time", String(syncTime));
               setSyncStatus("synced");
             }
           } else {
@@ -338,18 +362,19 @@ export default function App() {
     let active = true;
     const pollSync = async () => {
       try {
-        const res = await fetch(`/api/sync?t=${Date.now()}`, {
+        const sinceParam = lastSyncTimeRef.current > 0 ? `?since=${lastSyncTimeRef.current}&t=${Date.now()}` : `?t=${Date.now()}`;
+        const res = await fetch(`/api/sync${sinceParam}`, {
           headers: { "Cache-Control": "no-cache, no-store, must-revalidate" }
         });
         const data = await res.json();
         if (!active) return;
 
         if (data.success && data.hasData) {
-          if (data.updatedAt !== lastSyncTime) {
+          if (data.updated) {
             if (data.lastUpdatedBy !== clientId || isMobileMode) {
-              // Seamless silent background update without disturbing user with prompts
+              // Seamless background update without disturbing user
               isApplyingServerSync.current = true;
-              if (Array.isArray(data.clients) && data.clients.length > 0) setClients(data.clients);
+              if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
               if (Array.isArray(data.activities)) setActivities(data.activities);
               if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
               if (Array.isArray(data.reports)) setReports(data.reports);
@@ -358,8 +383,10 @@ export default function App() {
                 isApplyingServerSync.current = false;
               }, 300);
             }
-            setLastSyncTime(data.updatedAt);
-            localStorage.setItem("care_last_sync_time", String(data.updatedAt));
+            const syncTime = data.updatedAt || Date.now();
+            setLastSyncTime(syncTime);
+            lastSyncTimeRef.current = syncTime;
+            localStorage.setItem("care_last_sync_time", String(syncTime));
             setSyncStatus("synced");
           } else {
             setSyncStatus("synced");
@@ -371,12 +398,12 @@ export default function App() {
       }
     };
 
-    const interval = setInterval(pollSync, 2000);
+    const interval = setInterval(pollSync, 1500);
     return () => {
       active = false;
       clearInterval(interval);
     };
-  }, [lastSyncTime, clientId, isMobileMode]);
+  }, [clientId, isMobileMode]);
 
   const handleExportBackup = () => {
     const data = {
@@ -515,21 +542,27 @@ export default function App() {
   useEffect(() => {
     if (!isInitialSyncDone.current) return;
     if (isApplyingServerSync.current) return;
-    if (isMobileMode) return; // Mobile helper view only reads schedules and submits reports/checks, never overwrites admin database
 
     const pushData = async () => {
       try {
         setSyncStatus("syncing");
         const now = Date.now();
-        const payload = {
-          clients,
-          activities,
-          settings,
-          reports,
-          freeStickers,
-          updatedAt: now,
-          lastUpdatedBy: clientId
-        };
+        const payload = isMobileMode
+          ? {
+              activities,
+              reports,
+              updatedAt: now,
+              lastUpdatedBy: "mobile_" + clientId
+            }
+          : {
+              clients,
+              activities,
+              settings,
+              reports,
+              freeStickers,
+              updatedAt: now,
+              lastUpdatedBy: clientId
+            };
         const res = await fetch("/api/sync", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -537,8 +570,10 @@ export default function App() {
         });
         const data = await res.json();
         if (data.success) {
-          setLastSyncTime(data.updatedAt || now);
-          localStorage.setItem("care_last_sync_time", String(data.updatedAt || now));
+          const syncTime = data.updatedAt || now;
+          setLastSyncTime(syncTime);
+          lastSyncTimeRef.current = syncTime;
+          localStorage.setItem("care_last_sync_time", String(syncTime));
           setSyncStatus("synced");
         }
       } catch (err) {
@@ -762,7 +797,7 @@ export default function App() {
                         const ny = dateObj.getFullYear();
                         const nm = String(dateObj.getMonth() + 1).padStart(2, "0");
                         const nd = String(dateObj.getDate()).padStart(2, "0");
-                        setSelectedDate(`${ny}-${nm}-${nd}`);
+                        handleDateChange(`${ny}-${nm}-${nd}`);
                       }}
                       className="px-4 py-2 hover:bg-slate-100 active:bg-slate-200 rounded-xl text-indigo-600 font-bold transition-colors cursor-pointer border border-slate-200 shadow-2xs text-lg select-none"
                     >
@@ -798,7 +833,7 @@ export default function App() {
                         <input
                           type="date"
                           value={selectedDate}
-                          onChange={(e) => setSelectedDate(e.target.value)}
+                          onChange={(e) => handleDateChange(e.target.value)}
                           onClick={(e) => e.stopPropagation()}
                           className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                         />
@@ -813,7 +848,7 @@ export default function App() {
                         const ny = dateObj.getFullYear();
                         const nm = String(dateObj.getMonth() + 1).padStart(2, "0");
                         const nd = String(dateObj.getDate()).padStart(2, "0");
-                        setSelectedDate(`${ny}-${nm}-${nd}`);
+                        handleDateChange(`${ny}-${nm}-${nd}`);
                       }}
                       className="px-4 py-2 hover:bg-slate-100 active:bg-slate-200 rounded-xl text-indigo-600 font-bold transition-colors cursor-pointer border border-slate-200 shadow-2xs text-lg select-none"
                     >
@@ -821,7 +856,7 @@ export default function App() {
                     </button>
 
                     <button
-                      onClick={() => setSelectedDate(getTodayDateString())}
+                      onClick={() => handleDateChange(getTodayDateString())}
                       className={`px-3.5 py-2 font-bold rounded-xl text-xs transition-all cursor-pointer border shadow-2xs select-none ${
                         selectedDate === getTodayDateString()
                           ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
@@ -921,7 +956,7 @@ export default function App() {
             settings={settings}
             clients={clients}
             selectedDate={selectedDate}
-            onDateChange={setSelectedDate}
+            onDateChange={handleDateChange}
             onToggleCheck={handleToggleCheck}
             reports={reports}
             onUpdateReports={setReports}
@@ -968,67 +1003,76 @@ export default function App() {
 
               {/* Content */}
               <div className="p-6 space-y-5 text-center">
-                <div className="inline-block p-4 bg-white rounded-2xl border-2 border-pink-200 shadow-sm">
-                  {typeof window !== "undefined" && (
-                    <QRCodeSVG
-                      value={`${window.location.origin}${window.location.pathname}?view=mobile`}
-                      size={200}
-                      level="M"
-                      includeMargin={true}
-                    />
-                  )}
-                </div>
+                {(() => {
+                  const mobileUrl = typeof window !== "undefined"
+                    ? `${window.location.origin}${window.location.pathname}?view=mobile&date=${selectedDate}`
+                    : "";
+                  return (
+                    <>
+                      <div className="inline-block p-4 bg-white rounded-2xl border-2 border-pink-200 shadow-sm">
+                        {mobileUrl && (
+                          <QRCodeSVG
+                            value={mobileUrl}
+                            size={200}
+                            level="M"
+                            includeMargin={true}
+                          />
+                        )}
+                      </div>
 
-                <div className="space-y-2 text-left bg-pink-50/60 rounded-2xl p-4 border border-pink-100">
-                  <div className="flex items-center gap-2 text-pink-900 text-xs font-bold">
-                    <Smartphone className="w-4 h-4 text-pink-600" />
-                    <span>スマートフォンのカメラでQRをスキャン</span>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    PCで作成・編集した活動表やシフト・申し送り事項が、即座にスマホ画面へ自動同期されます。
-                  </p>
-                </div>
+                      <div className="space-y-2 text-left bg-pink-50/60 rounded-2xl p-4 border border-pink-100">
+                        <div className="flex items-center gap-2 text-pink-900 text-xs font-bold">
+                          <Smartphone className="w-4 h-4 text-pink-600" />
+                          <span>スマートフォンのカメラでQRをスキャン</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          PCで選択中の日付（{selectedDate}）および活動表・シフト・申し送り事項が、即座にスマホ画面へ自動同期されます。
+                        </p>
+                      </div>
 
-                {/* URL and Copy Button */}
-                <div className="space-y-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      readOnly
-                      value={typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}?view=mobile` : ""}
-                      className="w-full text-xs px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-700 select-all font-mono"
-                    />
-                    <button
-                      onClick={() => {
-                        if (typeof window !== "undefined") {
-                          navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?view=mobile`);
-                          setCopiedUrl(true);
-                          setTimeout(() => setCopiedUrl(false), 2000);
-                        }
-                      }}
-                      className="px-3.5 py-2.5 bg-pink-600 hover:bg-pink-700 active:bg-pink-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-xs"
-                    >
-                      {copiedUrl ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                      <span>{copiedUrl ? "コピー完了" : "URLコピー"}</span>
-                    </button>
-                  </div>
+                      {/* URL and Copy Button */}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            readOnly
+                            value={mobileUrl}
+                            className="w-full text-xs px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-700 select-all font-mono"
+                          />
+                          <button
+                            onClick={() => {
+                              if (mobileUrl) {
+                                navigator.clipboard.writeText(mobileUrl);
+                                setCopiedUrl(true);
+                                setTimeout(() => setCopiedUrl(false), 2000);
+                              }
+                            }}
+                            className="px-3.5 py-2.5 bg-pink-600 hover:bg-pink-700 active:bg-pink-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-xs"
+                          >
+                            {copiedUrl ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                            <span>{copiedUrl ? "コピー完了" : "URLコピー"}</span>
+                          </button>
+                        </div>
 
-                  <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                    <span className="flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                      同期サーバー: 稼働中
-                    </span>
-                    <a
-                      href={typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}?view=mobile` : "#"}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-pink-600 hover:underline flex items-center gap-1 font-bold"
-                    >
-                      <span>新しいタブで開く</span>
-                      <ExternalLink className="w-3 h-3" />
-                    </a>
-                  </div>
-                </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
+                          <span className="flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                            同期サーバー: 稼働中
+                          </span>
+                          <a
+                            href={mobileUrl || "#"}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-pink-600 hover:underline flex items-center gap-1 font-bold"
+                          >
+                            <span>新しいタブで開く</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      </div>
+                    </>
+                  );
+                })()}
 
                 <button
                   onClick={() => setShowQrModal(false)}

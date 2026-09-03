@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { DailyActivity, AppSettings, MedicineState, Client, FreeSticker, ExtraordinaryReport } from "../types";
 import { Plus, Edit2, Trash2, Eye, EyeOff, Pill, Users, Calendar, Check, Clock, Megaphone, RefreshCw } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
@@ -314,6 +314,11 @@ export default function DailyActivityTable({
   
   const [generalMsg, setGeneralMsg] = useState(settings.generalInstruction);
   const [showMessages, setShowMessages] = useState(true);
+
+  // Keep generalMsg synced whenever settings.generalInstruction updates from server sync or date change
+  useEffect(() => {
+    setGeneralMsg(settings.generalInstruction || "");
+  }, [settings.generalInstruction]);
 
   const timeOptions: string[] = [];
   for (let h = 7; h <= 20; h++) {

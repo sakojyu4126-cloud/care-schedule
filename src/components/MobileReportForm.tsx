@@ -156,6 +156,20 @@ export default function MobileReportForm({
 
     onUpdateReports([newReport, ...reports]);
 
+    // Direct server persist to ensure instant synchronization with PC and all devices
+    fetch("/api/report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(newReport)
+    })
+      .then(res => res.json())
+      .then(data => {
+        console.log("Report synced to server successfully:", data);
+      })
+      .catch(err => {
+        console.error("Failed to post report to server:", err);
+      });
+
     // Show success banner
     setSubmittedSuccess(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -165,7 +179,7 @@ export default function MobileReportForm({
 
     setTimeout(() => {
       setSubmittedSuccess(false);
-    }, 4000);
+    }, 5000);
   };
 
   return (
@@ -183,9 +197,9 @@ export default function MobileReportForm({
         <div className="bg-emerald-50 border-2 border-emerald-500 p-3.5 rounded-xl flex items-center gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
           <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
           <div>
-            <h3 className="text-xs font-black text-emerald-950">報告を登録しました！</h3>
+            <h3 className="text-xs font-black text-emerald-950">臨時対応を登録・サーバー同期完了！</h3>
             <p className="text-[11px] font-bold text-emerald-800">
-              管理者の確認画面へ即時反映されます。
+              管理者PCの活動表および臨時対応記録へ即時反映されました。
             </p>
           </div>
         </div>
