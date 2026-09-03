@@ -266,8 +266,11 @@ app.post("/api/sync", (req, res) => {
 app.post("/api/report", (req, res) => {
   try {
     const newReport = req.body;
-    if (!newReport || !newReport.id) {
+    if (!newReport || typeof newReport !== "object") {
       return res.status(400).json({ error: "Invalid report data" });
+    }
+    if (!newReport.id) {
+      newReport.id = "rep-" + Date.now() + "-" + Math.random().toString(36).substring(2, 7);
     }
 
     const existingReports = Array.isArray(serverState.reports) ? serverState.reports : [];

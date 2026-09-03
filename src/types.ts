@@ -135,6 +135,7 @@ export interface AppSettings {
       endTime: string;
     };
   };
+  managerActiveDate?: string;
 }
 
 export interface ExtraordinaryReport {

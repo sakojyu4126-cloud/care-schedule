@@ -34,15 +34,8 @@ import {
   Upload,
   Database,
   FileCode,
-  FileJson,
-  QrCode,
-  Copy,
-  Check,
-  ExternalLink,
-  X
+  FileJson
 } from "lucide-react";
-import { QRCodeSVG } from "qrcode.react";
-import { motion, AnimatePresence } from "motion/react";
 
 // Helper to perform one-time data migration from legacy mock cache to production master data
 function checkAndMigrateStorage(): boolean {
@@ -145,13 +138,6 @@ export default function App() {
     return cleanSettings(INITIAL_SETTINGS);
   });
 
-  const handleUpdateSettings = (newSettings: AppSettings | ((prev: AppSettings) => AppSettings)) => {
-    setSettings(prev => {
-      const nextVal = typeof newSettings === "function" ? newSettings(prev) : newSettings;
-      return cleanSettings(nextVal);
-    });
-  };
-
   // 臨時対応報告データ（純粋な手動登録・保存データのみ管理）
   const [reports, setReports] = useState<ExtraordinaryReport[]>(() => {
     const saved = localStorage.getItem("care_extraordinary_reports");
@@ -174,12 +160,73 @@ export default function App() {
     return getTodayDateString();
   });
 
+  const isApplyingServerSync = React.useRef(false);
+  const isInitialSyncDone = React.useRef(false);
+  const hasPendingLocalChanges = React.useRef(false);
+  const hasUserChangedDateManually = React.useRef(false);
+  const pushTimerRef = React.useRef<any>(null);
+
+  const safeSetItem = (key: string, value: any) => {
+    try {
+      localStorage.setItem(key, typeof value === "string" ? value : JSON.stringify(value));
+    } catch (err) {
+      console.warn(`[Storage] localStorage quota or restriction for ${key}:`, err);
+    }
+  };
+
+  const handleUpdateSettings = (newSettings: AppSettings | ((prev: AppSettings) => AppSettings)) => {
+    setSettings(prev => {
+      const nextVal = typeof newSettings === "function" ? newSettings(prev) : newSettings;
+      return cleanSettings(nextVal);
+    });
+    if (!isApplyingServerSync.current) {
+      hasPendingLocalChanges.current = true;
+    }
+  };
+
+  const handleUpdateActivities = (newActs: DailyActivity[] | ((prev: DailyActivity[]) => DailyActivity[])) => {
+    setActivities(prev => {
+      const nextVal = typeof newActs === "function" ? newActs(prev) : newActs;
+      return nextVal;
+    });
+    if (!isApplyingServerSync.current) {
+      hasPendingLocalChanges.current = true;
+    }
+  };
+
+  const handleUpdateReports = (newReports: ExtraordinaryReport[] | ((prev: ExtraordinaryReport[]) => ExtraordinaryReport[])) => {
+    setReports(prev => {
+      const nextVal = typeof newReports === "function" ? newReports(prev) : newReports;
+      return nextVal;
+    });
+    if (!isApplyingServerSync.current) {
+      hasPendingLocalChanges.current = true;
+    }
+  };
+
+  const handleUpdateFreeStickers = (newStickers: FreeSticker[] | ((prev: FreeSticker[]) => FreeSticker[])) => {
+    setFreeStickers(prev => {
+      const nextVal = typeof newStickers === "function" ? newStickers(prev) : newStickers;
+      return nextVal;
+    });
+    if (!isApplyingServerSync.current) {
+      hasPendingLocalChanges.current = true;
+    }
+  };
+
   const handleDateChange = (newDate: string) => {
+    hasUserChangedDateManually.current = true;
     setSelectedDate(newDate);
     if (typeof window !== "undefined" && window.history.replaceState) {
       const url = new URL(window.location.href);
       url.searchParams.set("date", newDate);
       window.history.replaceState({}, "", url.toString());
+    }
+    if (!isMobileMode) {
+      handleUpdateSettings(prev => ({
+        ...prev,
+        managerActiveDate: newDate
+      }));
     }
   };
 
@@ -210,37 +257,33 @@ export default function App() {
   const [lastSyncTime, setLastSyncTime] = useState<number>(0);
   const lastSyncTimeRef = React.useRef<number>(0);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error" | "offline">("synced");
-  const [showQrModal, setShowQrModal] = useState(false);
-  const [copiedUrl, setCopiedUrl] = useState(false);
-  const isApplyingServerSync = React.useRef(false);
-  const isInitialSyncDone = React.useRef(false);
 
   const markHasUserData = () => {
-    localStorage.setItem("has_user_data", "true");
+    safeSetItem("has_user_data", "true");
   };
 
   useEffect(() => {
-    localStorage.setItem("care_clients", JSON.stringify(clients));
+    safeSetItem("care_clients", clients);
     if (isInitialSyncDone.current) markHasUserData();
   }, [clients]);
 
   useEffect(() => {
-    localStorage.setItem("care_activities", JSON.stringify(activities));
+    safeSetItem("care_activities", activities);
     if (isInitialSyncDone.current) markHasUserData();
   }, [activities]);
 
   useEffect(() => {
-    localStorage.setItem("care_settings", JSON.stringify(settings));
+    safeSetItem("care_settings", settings);
     if (isInitialSyncDone.current) markHasUserData();
   }, [settings]);
 
   useEffect(() => {
-    localStorage.setItem("care_extraordinary_reports", JSON.stringify(reports));
+    safeSetItem("care_extraordinary_reports", reports);
     if (isInitialSyncDone.current) markHasUserData();
   }, [reports]);
 
   useEffect(() => {
-    localStorage.setItem("care_free_stickers", JSON.stringify(freeStickers));
+    safeSetItem("care_free_stickers", freeStickers);
     if (isInitialSyncDone.current) markHasUserData();
   }, [freeStickers]);
 
@@ -254,21 +297,33 @@ export default function App() {
       
       if (data.success && data.hasData) {
         isApplyingServerSync.current = true;
+        hasPendingLocalChanges.current = false;
+        if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+
         if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
         if (Array.isArray(data.activities)) setActivities(data.activities);
-        if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
+        if (data.settings && typeof data.settings === "object") {
+          const cleaned = cleanSettings(data.settings);
+          setSettings(cleaned);
+          if (isMobileMode && cleaned.managerActiveDate && !hasUserChangedDateManually.current) {
+            const params = new URLSearchParams(window.location.search);
+            if (!params.get("date")) {
+              setSelectedDate(cleaned.managerActiveDate);
+            }
+          }
+        }
         if (Array.isArray(data.reports)) setReports(data.reports);
         if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
         
         const syncTime = data.updatedAt || Date.now();
         setLastSyncTime(syncTime);
         lastSyncTimeRef.current = syncTime;
-        localStorage.setItem("care_last_sync_time", String(syncTime));
-        localStorage.setItem("has_user_data", "true");
+        safeSetItem("care_last_sync_time", String(syncTime));
+        safeSetItem("has_user_data", "true");
         setSyncStatus("synced");
         setTimeout(() => {
           isApplyingServerSync.current = false;
-        }, 300);
+        }, 250);
       } else {
         setSyncStatus("synced");
       }
@@ -289,21 +344,33 @@ export default function App() {
         
         if (data.success && data.hasData) {
           isApplyingServerSync.current = true;
+          hasPendingLocalChanges.current = false;
+          if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+
           if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
           if (Array.isArray(data.activities)) setActivities(data.activities);
-          if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
+          if (data.settings && typeof data.settings === "object") {
+            const cleaned = cleanSettings(data.settings);
+            setSettings(cleaned);
+            if (isMobileMode && cleaned.managerActiveDate && !hasUserChangedDateManually.current) {
+              const params = new URLSearchParams(window.location.search);
+              if (!params.get("date")) {
+                setSelectedDate(cleaned.managerActiveDate);
+              }
+            }
+          }
           if (Array.isArray(data.reports)) setReports(data.reports);
           if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
           
           const syncTime = data.updatedAt || Date.now();
           setLastSyncTime(syncTime);
           lastSyncTimeRef.current = syncTime;
-          localStorage.setItem("care_last_sync_time", String(syncTime));
-          localStorage.setItem("has_user_data", "true");
+          safeSetItem("care_last_sync_time", String(syncTime));
+          safeSetItem("has_user_data", "true");
           setSyncStatus("synced");
           setTimeout(() => {
             isApplyingServerSync.current = false;
-          }, 300);
+          }, 250);
         } else {
           if (localStorage.getItem("has_user_data") === "true") {
             const now = Date.now();
@@ -326,7 +393,7 @@ export default function App() {
               const syncTime = postData.updatedAt || now;
               setLastSyncTime(syncTime);
               lastSyncTimeRef.current = syncTime;
-              localStorage.setItem("care_last_sync_time", String(syncTime));
+              safeSetItem("care_last_sync_time", String(syncTime));
               setSyncStatus("synced");
             }
           } else {
@@ -374,19 +441,31 @@ export default function App() {
             if (data.lastUpdatedBy !== clientId || isMobileMode) {
               // Seamless background update without disturbing user
               isApplyingServerSync.current = true;
+              hasPendingLocalChanges.current = false;
+              if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+
               if (Array.isArray(data.clients) && data.clients.length >= 50) setClients(data.clients);
               if (Array.isArray(data.activities)) setActivities(data.activities);
-              if (data.settings && typeof data.settings === "object") handleUpdateSettings(data.settings);
+              if (data.settings && typeof data.settings === "object") {
+                const cleaned = cleanSettings(data.settings);
+                setSettings(cleaned);
+                if (isMobileMode && cleaned.managerActiveDate && !hasUserChangedDateManually.current) {
+                  const params = new URLSearchParams(window.location.search);
+                  if (!params.get("date")) {
+                    setSelectedDate(cleaned.managerActiveDate);
+                  }
+                }
+              }
               if (Array.isArray(data.reports)) setReports(data.reports);
               if (Array.isArray(data.freeStickers)) setFreeStickers(data.freeStickers);
               setTimeout(() => {
                 isApplyingServerSync.current = false;
-              }, 300);
+              }, 250);
             }
             const syncTime = data.updatedAt || Date.now();
             setLastSyncTime(syncTime);
             lastSyncTimeRef.current = syncTime;
-            localStorage.setItem("care_last_sync_time", String(syncTime));
+            safeSetItem("care_last_sync_time", String(syncTime));
             setSyncStatus("synced");
           } else {
             setSyncStatus("synced");
@@ -542,8 +621,13 @@ export default function App() {
   useEffect(() => {
     if (!isInitialSyncDone.current) return;
     if (isApplyingServerSync.current) return;
+    if (!hasPendingLocalChanges.current) return;
 
-    const pushData = async () => {
+    if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    pushTimerRef.current = setTimeout(async () => {
+      if (isApplyingServerSync.current || !hasPendingLocalChanges.current) return;
+      hasPendingLocalChanges.current = false;
+
       try {
         setSyncStatus("syncing");
         const now = Date.now();
@@ -573,17 +657,18 @@ export default function App() {
           const syncTime = data.updatedAt || now;
           setLastSyncTime(syncTime);
           lastSyncTimeRef.current = syncTime;
-          localStorage.setItem("care_last_sync_time", String(syncTime));
+          safeSetItem("care_last_sync_time", String(syncTime));
           setSyncStatus("synced");
         }
       } catch (err) {
         console.error("Failed to push sync data:", err);
         setSyncStatus("offline");
       }
-    };
+    }, 350);
 
-    const timer = setTimeout(pushData, 400);
-    return () => clearTimeout(timer);
+    return () => {
+      if (pushTimerRef.current) clearTimeout(pushTimerRef.current);
+    };
   }, [clients, activities, settings, reports, freeStickers, clientId, isMobileMode]);
 
   // Master-to-Daily Synchronization:
@@ -592,11 +677,10 @@ export default function App() {
   const handleUpdateClients = (newClients: Client[]) => {
     setClients(newClients);
     setActivities(prevActivities => syncActivitiesWithClients(prevActivities, newClients, settings, getTodayDateString(), [selectedDate]));
+    if (!isApplyingServerSync.current) {
+      hasPendingLocalChanges.current = true;
+    }
   };
-
-  useEffect(() => {
-    setActivities(prevActivities => syncActivitiesWithClients(prevActivities, clients, settings, getTodayDateString(), [selectedDate]));
-  }, [clients, settings, selectedDate]);
 
   const handleExtractFromWeekly = () => {
     const extracted = extractDailyActivities(selectedDate, clients, settings);
@@ -604,9 +688,15 @@ export default function App() {
       ...prev.filter(act => act.date !== selectedDate),
       ...extracted
     ]);
+    if (!isApplyingServerSync.current) {
+      hasPendingLocalChanges.current = true;
+    }
   };
 
   const handleToggleCheck = (id: string) => {
+    if (!isApplyingServerSync.current) {
+      hasPendingLocalChanges.current = true;
+    }
     setActivities(prev => {
       const exists = prev.some(act => act.id === id);
       let nextActs: DailyActivity[];
@@ -658,14 +748,6 @@ export default function App() {
             {/* Management buttons: Only display on PC management screen, hidden on mobile */}
             {!isMobileMode && (
               <>
-                <button
-                  onClick={() => setShowQrModal(true)}
-                  className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-pink-50 hover:bg-pink-100 text-pink-700 border border-pink-200/80 transition-all cursor-pointer shadow-3xs"
-                  title="スマートフォンで開くためのQRコードを表示します"
-                >
-                  <QrCode className="w-3.5 h-3.5 text-pink-600" />
-                  <span>QR連携</span>
-                </button>
                 <button
                   onClick={() => window.location.href = "/api/export-zip"}
                   className="flex items-center gap-1.5 text-xs font-bold px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 transition-all cursor-pointer shadow-3xs"
@@ -900,15 +982,15 @@ export default function App() {
                   settings={settings}
                   clients={clients}
                   clientsCount={clients.length}
-                  onUpdateActivities={setActivities}
+                  onUpdateActivities={handleUpdateActivities}
                   onUpdateSettings={handleUpdateSettings}
                   isLocked={false}
                   externalAddTrigger={externalAddTrigger}
                   selectedDate={selectedDate}
                   freeStickers={freeStickers}
-                  onUpdateFreeStickers={setFreeStickers}
+                  onUpdateFreeStickers={handleUpdateFreeStickers}
                   reports={reports}
-                  onUpdateReports={setReports}
+                  onUpdateReports={handleUpdateReports}
                 />
               </div>
             )}
@@ -918,7 +1000,7 @@ export default function App() {
               <ExtraordinaryReportTab
                 clients={clients}
                 reports={reports}
-                onUpdateReports={setReports}
+                onUpdateReports={handleUpdateReports}
                 settings={settings}
                 isLocked={isAdminLocked}
               />
@@ -959,9 +1041,9 @@ export default function App() {
             onDateChange={handleDateChange}
             onToggleCheck={handleToggleCheck}
             reports={reports}
-            onUpdateReports={setReports}
+            onUpdateReports={handleUpdateReports}
             freeStickers={freeStickers}
-            onUpdateActivities={setActivities}
+            onUpdateActivities={handleUpdateActivities}
             onManualSync={handleManualSync}
             syncStatus={syncStatus}
           />
@@ -971,121 +1053,6 @@ export default function App() {
       <footer className="text-center py-8 text-[11px] text-slate-400 border-t border-slate-200 mt-12">
         <p>© 介護活動・予定表連動システム - デイサービス & ヘルパーステーション連携</p>
       </footer>
-
-      {/* QR Code Mobile Link Modal */}
-      <AnimatePresence>
-        {showQrModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden"
-            >
-              {/* Header */}
-              <div className="bg-gradient-to-r from-pink-600 to-rose-600 px-6 py-4 text-white flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-white/20 rounded-xl">
-                    <QrCode className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-base font-black">スマホ画面・QR連携</h3>
-                    <p className="text-xs text-pink-100">ヘルパー端末用リアルタイム画面</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowQrModal(false)}
-                  className="p-1.5 hover:bg-white/20 rounded-xl text-white transition-colors cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Content */}
-              <div className="p-6 space-y-5 text-center">
-                {(() => {
-                  const mobileUrl = typeof window !== "undefined"
-                    ? `${window.location.origin}${window.location.pathname}?view=mobile&date=${selectedDate}`
-                    : "";
-                  return (
-                    <>
-                      <div className="inline-block p-4 bg-white rounded-2xl border-2 border-pink-200 shadow-sm">
-                        {mobileUrl && (
-                          <QRCodeSVG
-                            value={mobileUrl}
-                            size={200}
-                            level="M"
-                            includeMargin={true}
-                          />
-                        )}
-                      </div>
-
-                      <div className="space-y-2 text-left bg-pink-50/60 rounded-2xl p-4 border border-pink-100">
-                        <div className="flex items-center gap-2 text-pink-900 text-xs font-bold">
-                          <Smartphone className="w-4 h-4 text-pink-600" />
-                          <span>スマートフォンのカメラでQRをスキャン</span>
-                        </div>
-                        <p className="text-[11px] text-slate-600 leading-relaxed">
-                          PCで選択中の日付（{selectedDate}）および活動表・シフト・申し送り事項が、即座にスマホ画面へ自動同期されます。
-                        </p>
-                      </div>
-
-                      {/* URL and Copy Button */}
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <input
-                            type="text"
-                            readOnly
-                            value={mobileUrl}
-                            className="w-full text-xs px-3 py-2.5 bg-slate-100 border border-slate-200 rounded-xl text-slate-700 select-all font-mono"
-                          />
-                          <button
-                            onClick={() => {
-                              if (mobileUrl) {
-                                navigator.clipboard.writeText(mobileUrl);
-                                setCopiedUrl(true);
-                                setTimeout(() => setCopiedUrl(false), 2000);
-                              }
-                            }}
-                            className="px-3.5 py-2.5 bg-pink-600 hover:bg-pink-700 active:bg-pink-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer shadow-xs"
-                          >
-                            {copiedUrl ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                            <span>{copiedUrl ? "コピー完了" : "URLコピー"}</span>
-                          </button>
-                        </div>
-
-                        <div className="flex items-center justify-between text-[11px] text-slate-500 pt-1">
-                          <span className="flex items-center gap-1">
-                            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            同期サーバー: 稼働中
-                          </span>
-                          <a
-                            href={mobileUrl || "#"}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-pink-600 hover:underline flex items-center gap-1 font-bold"
-                          >
-                            <span>新しいタブで開く</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-
-                <button
-                  onClick={() => setShowQrModal(false)}
-                  className="w-full py-3 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-colors cursor-pointer shadow-sm"
-                >
-                  閉じる
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
     </div>
   );
 }
