@@ -5,7 +5,7 @@
 
 import React, { useState } from "react";
 import { AppSettings, Client, CareLevel, HelperShiftRow, HelperMonthShift } from "../types";
-import { Lock, Unlock, Database, Sparkles, RefreshCw, AlertCircle, CheckCircle2, ShieldAlert, FileSpreadsheet, Trash2, Eye, EyeOff, Users, Plus, X, Upload, FileUp, Download, FileCode, FolderArchive, Loader2 } from "lucide-react";
+import { Lock, Unlock, Database, Sparkles, RefreshCw, AlertCircle, CheckCircle2, ShieldAlert, FileSpreadsheet, Trash2, Eye, EyeOff, Users, Plus, X, Upload, FileUp, Download, FileCode, FolderArchive, Loader2, FileJson, Clipboard, FileText } from "lucide-react";
 import { motion } from "motion/react";
 import { INITIAL_CLIENTS } from "../utils/dummyData";
 import { normalizeHelperName, isInvalidHelperName, cleanSettings } from "../utils/scheduler";
@@ -20,6 +20,8 @@ interface SettingsTabProps {
   onSetLock: (lock: boolean) => void;
   onExportBackup?: () => void;
   onImportBackup?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onImportFile?: (file: File) => Promise<boolean>;
+  onImportJsonText?: (text: string) => Promise<boolean>;
   activitiesCount?: number;
   datesCount?: number;
 }
@@ -33,9 +35,18 @@ export default function SettingsTab({
   onSetLock,
   onExportBackup,
   onImportBackup,
+  onImportFile,
+  onImportJsonText,
   activitiesCount,
   datesCount
 }: SettingsTabProps) {
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [isPasteJsonModalOpen, setIsPasteJsonModalOpen] = useState(false);
+  const [jsonPasteInput, setJsonPasteInput] = useState("");
+  const [isProcessingJsonPaste, setIsProcessingJsonPaste] = useState(false);
+  const [pasteError, setPasteError] = useState("");
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+
   const [passwordInput, setPasswordInput] = useState("");
   const [lockError, setLockError] = useState("");
   const [adminPassword, setAdminPassword] = useState(() => {
@@ -704,7 +715,47 @@ export default function SettingsTab({
       </div>
 
       {/* Backup & Restore Card */}
-      <div className="bg-gradient-to-br from-white via-indigo-50/20 to-purple-50/20 p-5 rounded-2xl border border-indigo-150 shadow-xs space-y-4">
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOver(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOver(false);
+        }}
+        onDrop={async (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setIsDraggingOver(false);
+          const droppedFile = e.dataTransfer.files?.[0];
+          if (droppedFile) {
+            if (onImportFile) {
+              await onImportFile(droppedFile);
+            } else if (onImportBackup) {
+              const simulatedEvent = {
+                target: { files: [droppedFile], value: "" }
+              } as unknown as React.ChangeEvent<HTMLInputElement>;
+              onImportBackup(simulatedEvent);
+            }
+          }
+        }}
+        className={`relative bg-gradient-to-br from-white via-indigo-50/20 to-purple-50/20 p-5 rounded-2xl border transition-all space-y-4 ${
+          isDraggingOver
+            ? "border-emerald-500 bg-emerald-50/40 shadow-lg ring-2 ring-emerald-400"
+            : "border-indigo-150 shadow-xs"
+        }`}
+      >
+        {isDraggingOver && (
+          <div className="absolute inset-0 z-20 bg-emerald-600/90 text-white rounded-2xl flex flex-col items-center justify-center p-6 text-center backdrop-blur-2xs animate-in fade-in">
+            <Upload className="w-10 h-10 mb-2 animate-bounce" />
+            <p className="text-base font-black">バックアップJSONファイルをここにドロップして復元</p>
+            <p className="text-xs text-emerald-100 mt-1">DropboxやPCローカルの.jsonファイルを安全に読込みます</p>
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-indigo-100/80 pb-3">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white flex items-center justify-center shadow-xs">
@@ -734,9 +785,19 @@ export default function SettingsTab({
           </div>
         </div>
 
+        {/* Hidden File Input for Clean Programmatic Trigger */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,application/json"
+          onChange={onImportBackup}
+          className="hidden"
+        />
+
         <div className="flex flex-wrap items-center gap-3 pt-1">
           {onExportBackup && (
             <button
+              type="button"
               onClick={onExportBackup}
               className="flex items-center gap-2 text-xs font-black text-indigo-900 bg-indigo-100 hover:bg-indigo-200 border border-indigo-300 px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-98"
               title="過去全期間の全スケジュール・利用者・設定データを1つのJSONファイルとしてエクスポートします"
@@ -747,20 +808,40 @@ export default function SettingsTab({
           )}
 
           {onImportBackup && (
-            <label className="flex items-center gap-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-98">
+            <button
+              type="button"
+              onClick={() => {
+                if (fileInputRef.current) {
+                  fileInputRef.current.value = "";
+                  fileInputRef.current.click();
+                }
+              }}
+              className="flex items-center gap-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 border border-emerald-700 px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-98"
+              title="保存したJSONバックアップファイルを選択して全データを復元します"
+            >
               <Upload className="w-4 h-4 text-emerald-100" />
               <span>保存ファイルから全復元 (JSON読込)</span>
-              <input
-                type="file"
-                accept=".json"
-                onClick={(e) => { e.currentTarget.value = ""; }}
-                onChange={onImportBackup}
-                className="hidden"
-              />
-            </label>
+            </button>
+          )}
+
+          {onImportJsonText && (
+            <button
+              type="button"
+              onClick={() => {
+                setPasteError("");
+                setJsonPasteInput("");
+                setIsPasteJsonModalOpen(true);
+              }}
+              className="flex items-center gap-2 text-xs font-black text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-4 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-98"
+              title="Dropbox等からファイル内容のテキストをコピー＆ペーストして直接復元します"
+            >
+              <FileText className="w-4 h-4 text-emerald-600" />
+              <span>JSONテキスト直接貼り付けで復元</span>
+            </button>
           )}
 
           <button
+            type="button"
             onClick={handleDownloadZip}
             disabled={isDownloadingZip}
             className="flex items-center gap-2 text-xs font-black text-white bg-purple-600 hover:bg-purple-700 disabled:opacity-50 px-4.5 py-2.5 rounded-xl transition-all cursor-pointer shadow-2xs active:scale-98"
@@ -771,11 +852,105 @@ export default function SettingsTab({
           </button>
         </div>
 
-        <div className="bg-amber-50/80 border border-amber-200/90 rounded-xl p-3 text-[11px] text-amber-900 leading-relaxed">
-          <span className="font-bold">💡 データ復元とクラウド同期について:</span>
-          「保存ファイルから全復元」を行うと、お持ちのバックアップファイルに含まれる7月以降の全期間データが安全に復元され、同時にFirebaseクラウドデータベースへも一括反映されます。スマートフォン側のヘルパー画面とも即座に完全同期されます。
+        <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-3 text-[11px] text-amber-900 leading-relaxed space-y-1">
+          <div className="font-bold flex items-center gap-1.5 text-amber-950">
+            <span>💡 データ復元とDropbox保存ファイルについて:</span>
+          </div>
+          <p>
+            ・「保存ファイルから全復元」または「JSONテキスト直接貼り付け」を実行すると、お持ちのバックアップに含まれる7月以降の全期間データが安全に復元され、同時にFirebaseクラウドへ一括反映されます。スマートフォン側のヘルパー画面とも即座に完全同期されます。
+          </p>
+          <p className="text-amber-800 text-[10px]">
+            ※ Dropbox内のファイルを選択する際、Dropboxの「スマートシンク（オンラインのみ）」設定になっているとファイルが0バイトとして取得される場合があります。その場合はファイルをデスクトップ等にコピーしてから選択するか、「JSONテキスト直接貼り付け」をご利用ください。
+          </p>
         </div>
       </div>
+
+      {/* JSONテキスト直接貼り付けモーダル */}
+      {isPasteJsonModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-800">
+                    バックアップJSONテキスト直接貼り付け
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    Dropboxやメモ帳で開いたバックアップJSONの内容をここに貼り付けて復元します
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPasteJsonModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                title="閉じる"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <textarea
+                value={jsonPasteInput}
+                onChange={(e) => {
+                  setJsonPasteInput(e.target.value);
+                  setPasteError("");
+                }}
+                placeholder='ここにバックアップJSONファイルの内容（{"clients": [...], "activities": [...], "settings": {...}}）を貼り付けてください...'
+                className="w-full h-48 p-3 text-xs font-mono bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-emerald-500 outline-none resize-none leading-relaxed"
+              />
+
+              {pasteError && (
+                <p className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 rounded-lg p-2.5 whitespace-pre-wrap">
+                  {pasteError}
+                </p>
+              )}
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsPasteJsonModalOpen(false)}
+                className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                disabled={!jsonPasteInput.trim() || isProcessingJsonPaste}
+                onClick={async () => {
+                  if (!jsonPasteInput.trim()) return;
+                  setIsProcessingJsonPaste(true);
+                  setPasteError("");
+                  try {
+                    if (onImportJsonText) {
+                      const ok = await onImportJsonText(jsonPasteInput.trim());
+                      if (ok) {
+                        setIsPasteJsonModalOpen(false);
+                        setJsonPasteInput("");
+                      } else {
+                        setPasteError("復元に失敗しました。正しいJSON形式かご確認ください。");
+                      }
+                    }
+                  } catch (err: any) {
+                    setPasteError(err?.message || "復元エラーが発生しました");
+                  } finally {
+                    setIsProcessingJsonPaste(false);
+                  }
+                }}
+                className="px-5 py-2.5 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                {isProcessingJsonPaste ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                <span>この内容で全データを復元する</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 2 & 3. Helper Master & Monthly Shift Import (Side-by-Side Compact Layout) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">

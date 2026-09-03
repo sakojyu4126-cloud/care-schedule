@@ -16,7 +16,7 @@ import {
   ExtraordinaryReport,
   FreeSticker
 } from "../types";
-import { cleanSettings } from "../utils/scheduler";
+import { cleanSettings, normalizeDateStr } from "../utils/scheduler";
 
 export interface SyncData {
   clients: Client[];
@@ -347,6 +347,7 @@ export class FirebaseSyncService {
     activities?: DailyActivity[];
   }): Promise<{ success: boolean; dateCount: number; actCount: number; error?: string }> {
     try {
+      this.isApplyingRemoteUpdate = true;
       this.callbacks.onStatusChange?.("syncing");
       const now = Date.now();
 
@@ -390,13 +391,21 @@ export class FirebaseSyncService {
       if (data.activities && data.activities.length > 0) {
         const dateMap = new Map<string, DailyActivity[]>();
         for (const a of data.activities) {
-          if (!a.date) continue;
-          if (!dateMap.has(a.date)) dateMap.set(a.date, []);
-          dateMap.get(a.date)!.push(a);
+          if (!a || !a.date) continue;
+          const cleanDate = normalizeDateStr(a.date);
+          // Never allow invalid document path containing slashes
+          if (!cleanDate || cleanDate.includes("/")) continue;
+          if (!dateMap.has(cleanDate)) dateMap.set(cleanDate, []);
+          dateMap.get(cleanDate)!.push({ ...a, date: cleanDate });
         }
 
         dateCount = dateMap.size;
-        totalActivities = data.activities.length;
+        totalActivities = Array.from(dateMap.values()).reduce((sum, list) => sum + list.length, 0);
+
+        // Protect each date against listener echoes for 60 seconds
+        for (const [cleanDate] of dateMap) {
+          this.recentLocalPushes.set(cleanDate, Date.now() + 60000);
+        }
 
         const dateEntries = Array.from(dateMap.entries());
         const chunkSize = 200;
@@ -423,9 +432,14 @@ export class FirebaseSyncService {
       }, { merge: true });
 
       this.callbacks.onStatusChange?.("synced");
+      // Keep isApplyingRemoteUpdate true for 5 seconds to ignore listener echoes
+      setTimeout(() => {
+        this.isApplyingRemoteUpdate = false;
+      }, 5000);
       return { success: true, dateCount, actCount: totalActivities };
     } catch (err: any) {
       console.error("[FirebaseSync] restoreAllDataBatch error:", err);
+      this.isApplyingRemoteUpdate = false;
       this.callbacks.onStatusChange?.("offline");
       return { success: false, dateCount: 0, actCount: 0, error: err?.message || String(err) };
     }

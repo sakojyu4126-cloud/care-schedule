@@ -35,7 +35,8 @@ import {
   Upload,
   Database,
   FileCode,
-  FileJson
+  FileJson,
+  X
 } from "lucide-react";
 
 // Helper to perform one-time data migration from legacy mock cache to production master data
@@ -305,6 +306,15 @@ export default function App() {
   const lastSyncTimeRef = React.useRef<number>(0);
   const [syncStatus, setSyncStatus] = useState<"synced" | "syncing" | "error" | "offline">("synced");
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
+  const [restoreModalInfo, setRestoreModalInfo] = useState<{
+    isOpen: boolean;
+    isSuccess: boolean;
+    title: string;
+    message: string;
+    clientsCount?: number;
+    datesCountStr?: string;
+    reportsCount?: number;
+  } | null>(null);
 
   const markHasUserData = () => {
     safeSetItem("has_user_data", "true");
@@ -534,169 +544,270 @@ export default function App() {
     }
   };
 
-  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processAndRestoreBackupJson = async (fileText: string): Promise<{ success: boolean; message: string }> => {
+    try {
+      if (!fileText || !fileText.trim()) {
+        throw new Error("ファイルの内容が空です。有効なバックアップJSONを指定してください。");
+      }
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
+      let parsed: any;
       try {
-        const fileText = event.target?.result as string;
-        if (!fileText || !fileText.trim()) {
-          alert("ファイルが空です。有効なバックアップJSONファイルを選択してください。");
-          return;
+        parsed = JSON.parse(fileText);
+      } catch (jsonErr: any) {
+        throw new Error("JSON形式の解析に失敗しました。正しいJSONファイルまたはテキストを入力してください。");
+      }
+
+      const parseIfString = (val: any) => {
+        if (typeof val === "string") {
+          try {
+            return JSON.parse(val);
+          } catch {
+            return val;
+          }
+        }
+        return val;
+      };
+
+      let extractedClients: any[] | null = null;
+      let extractedActivities: any[] | null = null;
+      let extractedSettings: any = null;
+      let extractedReports: any[] | null = null;
+      let extractedFreeStickers: any[] | null = null;
+
+      if (Array.isArray(parsed)) {
+        if (parsed.some((item: any) => item && (item.kanjiName || item.roomNumber || item.weeklyServices))) {
+          extractedClients = parsed;
+        } else if (parsed.some((item: any) => item && (item.timeCategory || item.timeRange || item.clientName || item.route))) {
+          extractedActivities = parsed;
+        } else if (parsed.some((item: any) => item && item.date && Array.isArray(item.list))) {
+          extractedActivities = parsed.flatMap((item: any) => item.list || []);
+        }
+      } else if (parsed && typeof parsed === "object") {
+        // Check for localStorage keys format
+        if (parsed.care_clients) extractedClients = parseIfString(parsed.care_clients);
+        if (parsed.care_activities) extractedActivities = parseIfString(parsed.care_activities);
+        if (parsed.care_settings) extractedSettings = parseIfString(parsed.care_settings);
+        if (parsed.care_extraordinary_reports) extractedReports = parseIfString(parsed.care_extraordinary_reports);
+        if (parsed.care_free_stickers) extractedFreeStickers = parseIfString(parsed.care_free_stickers);
+
+        // Standard format candidates
+        const candidates = [parsed, parsed.data, parsed.serverState, parsed.state, parsed.result, parsed.backup].filter(Boolean);
+        for (const cand of candidates) {
+          if (!extractedClients && Array.isArray(cand.clients)) extractedClients = cand.clients;
+          if (!extractedActivities && cand.activities) extractedActivities = parseIfString(cand.activities);
+          if (!extractedSettings && cand.settings && typeof cand.settings === "object") extractedSettings = parseIfString(cand.settings);
+          if (!extractedReports && cand.reports) extractedReports = parseIfString(cand.reports);
+          if (!extractedFreeStickers && cand.freeStickers) extractedFreeStickers = parseIfString(cand.freeStickers);
         }
 
-        let parsed: any;
-        try {
-          parsed = JSON.parse(fileText);
-        } catch (jsonErr) {
-          alert("JSONファイルの解析に失敗しました。正しいJSONファイルを選択してください。");
-          return;
-        }
-
-        const parseIfString = (val: any) => {
-          if (typeof val === "string") {
-            try {
-              return JSON.parse(val);
-            } catch {
-              return val;
+        // Also check if activities is a date map: { "2026-07-01": [...], "2026-07-02": [...] }
+        if (extractedActivities && !Array.isArray(extractedActivities) && typeof extractedActivities === "object") {
+          extractedActivities = Object.entries(extractedActivities).flatMap(([d, list]) => {
+            if (Array.isArray(list)) {
+              return list.map((item: any) => ({ ...item, date: item.date || normalizeDateStr(d) }));
             }
-          }
-          return val;
-        };
+            return [];
+          });
+        }
 
-        let extractedClients: any[] | null = null;
-        let extractedActivities: any[] | null = null;
-        let extractedSettings: any = null;
-        let extractedReports: any[] | null = null;
-        let extractedFreeStickers: any[] | null = null;
-
-        if (Array.isArray(parsed)) {
-          if (parsed.some((item: any) => item && (item.kanjiName || item.roomNumber || item.weeklyServices))) {
-            extractedClients = parsed;
-          } else if (parsed.some((item: any) => item && (item.timeCategory || item.timeRange || item.clientName || item.route))) {
-            extractedActivities = parsed;
-          } else if (parsed.some((item: any) => item && item.date && Array.isArray(item.list))) {
-            extractedActivities = parsed.flatMap((item: any) => item.list || []);
-          }
-        } else if (parsed && typeof parsed === "object") {
-          // Check for localStorage keys format
-          if (parsed.care_clients) extractedClients = parseIfString(parsed.care_clients);
-          if (parsed.care_activities) extractedActivities = parseIfString(parsed.care_activities);
-          if (parsed.care_settings) extractedSettings = parseIfString(parsed.care_settings);
-          if (parsed.care_extraordinary_reports) extractedReports = parseIfString(parsed.care_extraordinary_reports);
-          if (parsed.care_free_stickers) extractedFreeStickers = parseIfString(parsed.care_free_stickers);
-
-          // Standard format candidates
-          const candidates = [parsed, parsed.data, parsed.serverState, parsed.state, parsed.result, parsed.backup].filter(Boolean);
-          for (const cand of candidates) {
-            if (!extractedClients && Array.isArray(cand.clients)) extractedClients = cand.clients;
-            if (!extractedActivities && cand.activities) extractedActivities = parseIfString(cand.activities);
-            if (!extractedSettings && cand.settings && typeof cand.settings === "object") extractedSettings = parseIfString(cand.settings);
-            if (!extractedReports && cand.reports) extractedReports = parseIfString(cand.reports);
-            if (!extractedFreeStickers && cand.freeStickers) extractedFreeStickers = parseIfString(cand.freeStickers);
-          }
-
-          // Also check if activities is a date map: { "2026-07-01": [...], "2026-07-02": [...] }
-          if (extractedActivities && !Array.isArray(extractedActivities) && typeof extractedActivities === "object") {
-            extractedActivities = Object.entries(extractedActivities).flatMap(([d, list]) => {
+        // Check if parsed itself is a direct date map: { "2026-07-01": [...], "2026-07-02": [...] }
+        if (!extractedActivities && !extractedClients && !extractedSettings) {
+          const keys = Object.keys(parsed);
+          const isDateDict = keys.length > 0 && keys.some(k => /^\d{4}[\/\-]\d{1,2}[\/\-]\d{1,2}$/.test(k) || /^\d{1,2}[\/\-]\d{1,2}$/.test(k));
+          if (isDateDict) {
+            extractedActivities = Object.entries(parsed).flatMap(([d, list]) => {
               if (Array.isArray(list)) {
-                return list.map(item => ({ ...item, date: item.date || d }));
+                return list.map((item: any) => ({ ...item, date: item.date || normalizeDateStr(d) }));
               }
               return [];
             });
           }
         }
-
-        // Flatten any nested { date, list } elements in extractedActivities
-        if (Array.isArray(extractedActivities)) {
-          extractedActivities = extractedActivities.flatMap((item: any) => {
-            if (item && item.date && Array.isArray(item.list)) {
-              return item.list.map((sub: any) => ({ ...sub, date: sub.date || item.date }));
-            }
-            return item ? [item] : [];
-          });
-        }
-
-        if (!extractedClients && !extractedActivities && !extractedSettings && !extractedReports) {
-          alert("ファイル内に有効なバックアップデータ（利用者、スケジュール、設定等）が見つかりませんでした。\n正しいバックアップJSONファイルを選択してください。");
-          return;
-        }
-
-        setSyncNotice("⏳ データを復元中... クラウド(Firebase)へ保存しています");
-        setSyncStatus("syncing");
-        isApplyingServerSync.current = true;
-
-        const newClients = extractedClients ? extractedClients.map((c: any) => {
-          let kn = (c.kanjiName || "").trim();
-          if (kn.endsWith("様")) kn = kn.slice(0, -1).trim();
-          let nn = (c.nickname || "").trim();
-          if (nn.endsWith("様")) nn = nn.slice(0, -1).trim();
-          return { ...c, kanjiName: kn, nickname: nn || kn };
-        }) : clients;
-
-        const newActivities = extractedActivities || activities;
-        const newSettings = extractedSettings ? cleanSettings(extractedSettings) : settings;
-        const newReports = extractedReports || reports;
-        const newFreeStickers = extractedFreeStickers || freeStickers;
-
-        // 1. Update React states immediately
-        setClients(newClients);
-        setActivities(newActivities);
-        setSettings(newSettings);
-        setReports(newReports);
-        setFreeStickers(newFreeStickers);
-
-        // 2. Safe local storage (never crashes on QuotaExceededError)
-        safeSetItem("care_clients", newClients);
-        safeSetItem("care_settings", newSettings);
-        safeSetItem("care_extraordinary_reports", newReports);
-        safeSetItem("care_free_stickers", newFreeStickers);
-        safeSetItem("care_activities", newActivities);
-        safeSetItem("has_user_data", "true");
-
-        const now = Date.now();
-        safeSetItem("care_last_sync_time", String(now));
-        setLastSyncTime(now);
-
-        // 3. Batch atomic write to Firebase Firestore
-        if (syncServiceRef.current) {
-          await syncServiceRef.current.restoreAllDataBatch({
-            clients: newClients,
-            settings: newSettings,
-            reports: newReports,
-            freeStickers: newFreeStickers,
-            activities: newActivities
-          });
-        }
-
-        setSyncStatus("synced");
-        setTimeout(() => {
-          isApplyingServerSync.current = false;
-        }, 500);
-
-        const uniqueDates = new Set(newActivities.map((a: any) => a.date).filter(Boolean));
-        const datesCountStr = uniqueDates.size > 0 ? `${uniqueDates.size}日分 (計${newActivities.length}件)` : `${newActivities.length}件`;
-
-        alert(
-          `【データ復元完了】\n` +
-          `バックアップファイルから正常に復元されました！\n\n` +
-          `・登録利用者: ${newClients.length}名\n` +
-          `・活動スケジュール: ${datesCountStr}\n` +
-          `・臨時対応報告: ${newReports.length}件\n` +
-          `・全体設定 / シフト割り当て: 正常更新\n\n` +
-          `クラウド(Firebase)にも完全同期されました。複数端末（PC・スマートフォン）間で即座に最新状態が共有されます。`
-        );
-      } catch (err: any) {
-        console.error("Failed to parse or restore backup JSON:", err);
-        isApplyingServerSync.current = false;
-        setSyncStatus("offline");
-        alert("復元処理中にエラーが発生しました:\n" + (err?.message || err));
       }
+
+      // Flatten any nested { date, list } elements in extractedActivities
+      if (Array.isArray(extractedActivities)) {
+        extractedActivities = extractedActivities.flatMap((item: any) => {
+          if (item && item.date && Array.isArray(item.list)) {
+            const safeD = normalizeDateStr(item.date);
+            return item.list.map((sub: any) => ({ ...sub, date: normalizeDateStr(sub.date) || safeD }));
+          }
+          return item ? [item] : [];
+        });
+      }
+
+      if (!extractedClients && !extractedActivities && !extractedSettings && !extractedReports) {
+        throw new Error(
+          "ファイル内に有効なバックアップデータ（利用者マスタ、活動スケジュール、設定等）が見つかりませんでした。\n正しいバックアップJSONファイルを選択してください。"
+        );
+      }
+
+      setSyncNotice("⏳ データを復元中... クラウド(Firebase)へ保存しています");
+      setSyncStatus("syncing");
+      isApplyingServerSync.current = true;
+
+      const newClients = extractedClients ? extractedClients.map((c: any) => {
+        let kn = (c.kanjiName || "").trim();
+        if (kn.endsWith("様")) kn = kn.slice(0, -1).trim();
+        let nn = (c.nickname || "").trim();
+        if (nn.endsWith("様")) nn = nn.slice(0, -1).trim();
+        return { ...c, kanjiName: kn, nickname: nn || kn };
+      }) : clients;
+
+      const rawActs = extractedActivities || activities;
+      const newActivities = rawActs.map((act: any) => ({
+        ...act,
+        date: normalizeDateStr(act.date) || act.date
+      }));
+
+      const newSettings = extractedSettings ? cleanSettings(extractedSettings) : settings;
+      const newReports = extractedReports || reports;
+      const newFreeStickers = extractedFreeStickers || freeStickers;
+
+      // 1. Update React states immediately
+      setClients(newClients);
+      setActivities(newActivities);
+      setSettings(newSettings);
+      setReports(newReports);
+      setFreeStickers(newFreeStickers);
+
+      // 2. Safe local storage (never crashes on QuotaExceededError)
+      safeSetItem("care_clients", newClients);
+      safeSetItem("care_settings", newSettings);
+      safeSetItem("care_extraordinary_reports", newReports);
+      safeSetItem("care_free_stickers", newFreeStickers);
+      safeSetItem("care_activities", newActivities);
+      safeSetItem("has_user_data", "true");
+
+      const now = Date.now();
+      safeSetItem("care_last_sync_time", String(now));
+      setLastSyncTime(now);
+
+      // 3. Batch atomic write to Firebase Firestore
+      if (syncServiceRef.current) {
+        const res = await syncServiceRef.current.restoreAllDataBatch({
+          clients: newClients,
+          settings: newSettings,
+          reports: newReports,
+          freeStickers: newFreeStickers,
+          activities: newActivities
+        });
+        if (!res.success) {
+          console.warn("[Restore] Firebase write notice:", res.error);
+        }
+      }
+
+      setSyncStatus("synced");
+      // Keep isApplyingServerSync true for 5 seconds to lock out echo updates
+      setTimeout(() => {
+        isApplyingServerSync.current = false;
+      }, 5000);
+
+      const uniqueDates = new Set(newActivities.map((a: any) => a.date).filter(Boolean));
+      const datesCountStr = uniqueDates.size > 0 ? `${uniqueDates.size}日分 (計${newActivities.length}件)` : `${newActivities.length}件`;
+
+      setRestoreModalInfo({
+        isOpen: true,
+        isSuccess: true,
+        title: "データ復元が完了しました",
+        message: "バックアップファイルの内容が正常にシステムおよびクラウド(Firebase)へ反映されました。\nすべての端末（PC・スマートフォン）に即座に共有されます。",
+        clientsCount: newClients.length,
+        datesCountStr,
+        reportsCount: newReports.length
+      });
+
+      setSyncNotice("✅ 全データの復元が完了し、クラウド(Firebase)に同期されました");
+      setTimeout(() => setSyncNotice(null), 5000);
+
+      return { success: true, message: "復元完了" };
+    } catch (err: any) {
+      console.error("Failed to parse or restore backup JSON:", err);
+      isApplyingServerSync.current = false;
+      setSyncStatus("offline");
+      setRestoreModalInfo({
+        isOpen: true,
+        isSuccess: false,
+        title: "復元処理中にエラーが発生しました",
+        message: err?.message || String(err)
+      });
+      return { success: false, message: err?.message || String(err) };
+    }
+  };
+
+  const handleImportBackup = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size === 0) {
+      setRestoreModalInfo({
+        isOpen: true,
+        isSuccess: false,
+        title: "ファイルサイズが0バイトです",
+        message:
+          "選択されたファイルのサイズが0バイトです。Dropboxの『スマートシンク（オンラインのみ）』設定になっている可能性があります。\n\n" +
+          "【解決方法】\n" +
+          "① パソコンのDropboxフォルダ上でファイルを右クリックし、『オフラインで使用可能にする』を選択してください。\n" +
+          "② または、ファイルをデスクトップ等のローカルフォルダに一度コピーしてから再度選択してください。\n" +
+          "③ または、「JSONテキスト直接貼り付け」からファイル内容を直接貼り付けて復元することも可能です。"
+      });
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const fileText = event.target?.result as string;
+      await processAndRestoreBackupJson(fileText);
+    };
+    reader.onerror = (readErr) => {
+      console.error("FileReader error:", readErr);
+      setRestoreModalInfo({
+        isOpen: true,
+        isSuccess: false,
+        title: "ファイルの読み込みに失敗しました",
+        message:
+          "Dropbox同期中またはアクセス制限の可能性があります。\nファイルをデスクトップ等へコピーしてから再試行するか、「JSONテキスト直接貼り付け」をお試しください。"
+      });
     };
     reader.readAsText(file);
     e.target.value = "";
+  };
+
+  const handleImportFileDirect = async (file: File): Promise<boolean> => {
+    return new Promise((resolve) => {
+      if (file.size === 0) {
+        setRestoreModalInfo({
+          isOpen: true,
+          isSuccess: false,
+          title: "ファイルサイズが0バイトです",
+          message:
+            "選択されたファイルのサイズが0バイトです。Dropboxの『スマートシンク（オンラインのみ）』が原因の可能性があります。オフラインで使用可能にするか、ローカルにコピーしてください。"
+        });
+        resolve(false);
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const fileText = event.target?.result as string;
+        const res = await processAndRestoreBackupJson(fileText);
+        resolve(res.success);
+      };
+      reader.onerror = () => {
+        setRestoreModalInfo({
+          isOpen: true,
+          isSuccess: false,
+          title: "ファイル読込失敗",
+          message: "ファイルを読み込めませんでした。ローカルにコピーするかテキスト貼り付けをお試しください。"
+        });
+        resolve(false);
+      };
+      reader.readAsText(file);
+    });
+  };
+
+  const handleImportJsonText = async (text: string): Promise<boolean> => {
+    const res = await processAndRestoreBackupJson(text);
+    return res.success;
   };
 
   // Master-to-Daily Synchronization:
@@ -1066,6 +1177,8 @@ export default function App() {
                 onSetLock={setIsAdminLocked}
                 onExportBackup={handleExportBackup}
                 onImportBackup={handleImportBackup}
+                onImportFile={handleImportFileDirect}
+                onImportJsonText={handleImportJsonText}
                 activitiesCount={activities.length}
                 datesCount={new Set(activities.map(a => a.date).filter(Boolean)).size}
               />
@@ -1090,6 +1203,72 @@ export default function App() {
             syncStatus={syncStatus}
           />
         </main>
+      )}
+
+      {/* 復元完了/エラー案内モーダル (確実に画面上に固定表示) */}
+      {restoreModalInfo && restoreModalInfo.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center gap-3">
+              <div
+                className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+                  restoreModalInfo.isSuccess ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                }`}
+              >
+                {restoreModalInfo.isSuccess ? <CheckCircle2 className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-black text-slate-800 tracking-tight">
+                  {restoreModalInfo.title}
+                </h3>
+                <p className="text-xs text-slate-500 font-bold">
+                  {restoreModalInfo.isSuccess ? "クラウド(Firebase)・全端末同期 正常完了" : "復元処理の確認"}
+                </p>
+              </div>
+              <button
+                onClick={() => setRestoreModalInfo(null)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-colors"
+                title="閉じる"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-150 text-xs text-slate-700 leading-relaxed whitespace-pre-wrap">
+              {restoreModalInfo.message}
+
+              {restoreModalInfo.isSuccess && (
+                <div className="mt-3 pt-3 border-t border-slate-200 grid grid-cols-2 gap-2 text-xs font-bold text-slate-800">
+                  <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center gap-2">
+                    <span className="text-indigo-600">👥</span>
+                    <span>登録利用者: {restoreModalInfo.clientsCount}名</span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-lg border border-slate-200 flex items-center gap-2">
+                    <span className="text-indigo-600">📅</span>
+                    <span>スケジュール: {restoreModalInfo.datesCountStr}</span>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-lg border border-slate-200 col-span-2 flex items-center gap-2">
+                    <span className="text-indigo-600">📋</span>
+                    <span>臨時対応報告: {restoreModalInfo.reportsCount}件 / 全体設定: 反映済</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2">
+              <button
+                onClick={() => setRestoreModalInfo(null)}
+                className={`w-full py-3 rounded-xl font-black text-sm text-white transition-all shadow-sm active:scale-98 cursor-pointer ${
+                  restoreModalInfo.isSuccess
+                    ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200"
+                    : "bg-slate-800 hover:bg-slate-900 shadow-slate-300"
+                }`}
+              >
+                閉じる (確認完了)
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <footer className="text-center py-8 text-[11px] text-slate-400 border-t border-slate-200 mt-12">
